@@ -1,0 +1,45 @@
+# ─── DATOS SENSIBLES ─────────────────────────────────────────────────────────
+# Resumenes reales de tarjeta. NUNCA se commitean.
+# Solo se versionan los textos anonimizados (tests/fixtures/texts/) y los
+# PDFs sinteticos generados por reportlab (tests/fixtures/pdfs/).
+tests/fixtures/private/
+input/
+*.pdf
+!tests/fixtures/pdfs/*.pdf
+
+# ─── Secretos ────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service_role*
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# ─── Supabase / Docker ───────────────────────────────────────────────────────
+supabase/.temp/
+supabase/.branches/
+
+# ─── Frontend build ──────────────────────────────────────────────────────────
+node_modules/
+static/css/tailwind.css
+
+# ─── Editores / OS ───────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini

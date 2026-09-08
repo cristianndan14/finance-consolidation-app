@@ -1,0 +1,47 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=512]
+
+  - repo: local
+    hooks:
+      # Los resumenes reales de tarjeta no se commitean nunca. Solo se permiten
+      # los PDFs sinteticos generados por reportlab para los tests.
+      - id: no-real-pdfs
+        name: bloquea PDFs fuera de tests/fixtures/pdfs/
+        entry: python scripts/check_no_pdfs.py
+        language: system
+        types: [file]
+        pass_filenames: true
+
+      # La service_role key bypassea RLS. Su uso esta acotado a un modulo.
+      - id: service-role-usage
+        name: service_role solo en modulos de la lista blanca
+        entry: python scripts/check_service_role.py
+        language: system
+        pass_filenames: false
+        files: ^app/
+
+      # set_config con is_local=false sobrevive la transaccion y filtra
+      # identidad entre requests cuando hay pooling.
+      - id: no-session-scoped-config
+        name: prohibido SET SESSION / set_config sin is_local
+        entry: python scripts/check_local_config.py
+        language: system
+        pass_filenames: false
+        files: ^app/

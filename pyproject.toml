@@ -1,0 +1,119 @@
+[project]
+name = "finance-consolidation"
+version = "0.1.0"
+description = "Seguimiento mensual de finanzas personales a partir de resumenes de tarjeta de credito"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    # web
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.12",
+    "itsdangerous>=2.2",
+    # db
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    # supabase (auth + storage solamente; los datos van por asyncpg con RLS)
+    "supabase>=2.10",
+    # auth
+    "pyjwt[crypto]>=2.10",
+    "httpx>=0.28",
+    # pdf
+    "pdfplumber>=0.11.4",
+    "pikepdf>=9.4",
+    # llm
+    "google-genai>=0.8",
+    # infra
+    "pydantic>=2.10",
+    "pydantic-settings>=2.6",
+    "structlog>=24.4",
+    "typer>=0.15",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "reportlab>=4.2",       # PDFs sinteticos para fixtures
+    "pre-commit>=4.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "N",         # pep8-naming
+    "UP",        # pyupgrade
+    "B",         # bugbear
+    "C4",        # comprehensions
+    "DTZ",       # datetime sin tz
+    "T20",       # print()
+    "SIM",       # simplify
+    "RUF",
+    "ASYNC",
+    "S",         # bandit
+]
+ignore = [
+    "E501",      # el formatter se encarga del largo
+    "B008",      # Depends() en defaults es el idioma de FastAPI
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]        # assert y credenciales de prueba
+"app/cli/**" = ["T20"]                        # el CLI si imprime
+"scripts/**" = ["T20"]                        # los guardas reportan por stdout
+
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+# El dominio y el adapter de LLM son el nucleo de correctitud: strict.
+[[tool.mypy.overrides]]
+module = ["app.domain.*", "app.llm.*", "app.schemas.*"]
+disallow_untyped_defs = true
+disallow_any_generics = true
+strict_equality = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = ["pdfplumber.*", "pikepdf.*", "supabase.*", "gotrue.*", "storage3.*", "asyncpg.*"]
+ignore_missing_imports = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+    "llm: pega contra la API real del LLM (cuesta dinero; excluido de CI)",
+    "db: necesita un Postgres con las migraciones aplicadas",
+]
+filterwarnings = ["error::DeprecationWarning"]

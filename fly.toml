@@ -1,0 +1,42 @@
+app = "finance-consolidation"
+primary_region = "eze"          # Buenos Aires. Cambiar si Supabase esta en otra region.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENV = "production"
+  LOG_LEVEL = "INFO"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+
+  # CRITICO: el runner de jobs vive dentro de este proceso. Si Fly suspende la
+  # maquina por inactividad, los jobs en vuelo mueren a mitad de camino.
+  # El reaper los recupera, pero mejor no generarlos.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 60
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"              # pdfplumber es el que mas RAM pide
+
+[checks]
+  [checks.health]
+    type = "http"
+    port = 8000
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+# ─── Secretos (NO van aca; se setean con `fly secrets set`) ───────────────────
+#   fly secrets set DATABASE_URL=... SUPABASE_URL=... SUPABASE_ANON_KEY=... \
+#                   SUPABASE_SERVICE_ROLE_KEY=... SESSION_SECRET=... GEMINI_API_KEY=...
