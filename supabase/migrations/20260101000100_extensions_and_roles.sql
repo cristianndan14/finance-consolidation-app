@@ -34,7 +34,35 @@ $$;
 -- Explicito y verificado por tests: si alguien "arregla" un permiso dandole
 -- superuser o bypassrls a este rol, el aislamiento entre usuarios desaparece
 -- sin que falle nada visible.
-alter role app_runtime nosuperuser nobypassrls nocreatedb nocreaterole noreplication;
+--
+-- El ALTER solo se puede ejecutar siendo superuser: Postgres exige el atributo
+-- SUPERUSER para cambiar SUPERUSER y BYPASSRLS, incluso para APAGARLOS. En
+-- Supabase gestionado el rol `postgres` no es superuser, asi que ahi el ALTER
+-- fallaria con 42501 y la migracion no correria.
+--
+-- `create role` deja los cinco atributos apagados por default, con lo cual en
+-- ese entorno alcanza con VERIFICARLO y hacer fallar la migracion si no fuera
+-- cierto. La garantia es la misma: la migracion no pasa con un app_runtime que
+-- pueda saltear RLS.
+do $$
+begin
+  if (select rolsuper from pg_roles where rolname = current_user) then
+    execute 'alter role app_runtime '
+            'nosuperuser nobypassrls nocreatedb nocreaterole noreplication';
+  end if;
+
+  if exists (
+    select 1 from pg_roles
+     where rolname = 'app_runtime'
+       and (rolsuper or rolbypassrls or rolcreatedb or rolcreaterole
+            or rolreplication)
+  ) then
+    raise exception
+      'app_runtime tiene atributos que anulan RLS '
+      '(superuser/bypassrls/createdb/createrole/replication)';
+  end if;
+end
+$$;
 
 -- Puede convertirse en `authenticated` (las politicas apuntan a ese rol) y en
 -- `anon` (para el flujo de login, antes de tener identidad).
