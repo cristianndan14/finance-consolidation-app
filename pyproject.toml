@@ -30,6 +30,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     "structlog>=24.4",
     "typer>=0.15",
+    "openpyxl>=3.1.5",
 ]
 
 [project.optional-dependencies]
@@ -104,7 +105,15 @@ strict_equality = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["pdfplumber.*", "pikepdf.*", "supabase.*", "gotrue.*", "storage3.*", "asyncpg.*"]
+module = [
+    "pdfplumber.*",
+    "pikepdf.*",
+    "supabase.*",
+    "gotrue.*",
+    "storage3.*",
+    "asyncpg.*",
+    "openpyxl.*",
+]
 ignore_missing_imports = true
 
 # ─────────────────────────────────────────────────────────────────────────────
