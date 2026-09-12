@@ -32,10 +32,11 @@ test lo vea en vez de explotar.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final
 
-from app.llm.ports import HeaderHints, LLMResponseError, LLMResult, LLMUsage
+from app.llm.ports import HeaderHints, LLMResponseError, LLMResult, LLMUsage, MerchantExample
 from app.schemas.llm import MerchantsPayload, StatementHeaderPayload, TransactionsPayload
 
 PROVIDER: Final = "fake"
@@ -122,9 +123,18 @@ class FakeExtractor:
         return self._result(self._repair, prompt_version)
 
     async def normalize_merchants(
-        self, *, raw_keys: list[str], category_slugs: list[str], prompt_version: str
+        self,
+        *,
+        raw_keys: list[str],
+        category_slugs: list[str],
+        prompt_version: str,
+        examples: Sequence[MerchantExample] = (),
     ) -> LLMResult[MerchantsPayload]:
-        self.calls.append({"call": "merchants", "keys": list(raw_keys)})
+        # Los ejemplos quedan registrados para poder afirmar que el few-shot
+        # llego al modelo: el cassette no cambia segun el prompt.
+        self.calls.append(
+            {"call": "merchants", "keys": list(raw_keys), "examples": list(examples)}
+        )
         return self._result(self._merchants, prompt_version)
 
     async def aclose(self) -> None:
