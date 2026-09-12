@@ -581,6 +581,54 @@ Al terminar cada fase:
 
 ---
 
+## 15. Migración futura: sacar el runner de un host siempre encendido
+
+**No implementado todavía.** Decisión de arquitectura registrada el 2026-09-12 para cuando se
+quiera dejar de depender de una máquina de Fly.io corriendo 24/7 solo para sostener el loop de
+jobs (el costo que justifica `min_machines_running=1` en `fly.toml`).
+
+**Lo que NO cambia:** el encolado sigue siendo 100% a demanda. Hoy `enqueue()` se llama desde
+tres lugares y solo tres, todos reacciones a una acción del usuario — nunca por horario:
+
+- `app/services/ingest.py` al subir un documento (job `parse`),
+- `app/web/documents.py` en `POST /documents/{id}/reparse`,
+- el handler de confirmación en `app/services/review.py` (job `enrich`).
+
+No hay ni va a haber un job programado por tiempo. `pg_cron` acá no genera trabajo de negocio:
+solo resuelve **quién despierta al runner** para que vaya a mirar la cola, si el proceso de la
+API ya no vive siempre encendido.
+
+**Diseño propuesto:**
+
+1. Reemplazar el `asyncio.Task` del `lifespan` (`app/jobs/runner.py`) por un endpoint HTTP
+   interno, p.ej. `POST /internal/jobs/run`, que ejecuta **una pasada** del mismo claim
+   (`for update skip locked`) y procesa lo que encuentre — sin loop propio. Protegido con un
+   secreto compartido en el header (no es una ruta de usuario; nunca debe colgar de
+   `service_role`, mismo criterio que ya rige para `app/infra/supabase_admin.py`).
+2. Migración SQL en `supabase/migrations/` que habilita las extensions `pg_cron` y `pg_net` y
+   agrega un `cron.schedule(...)` que llama `net.http_post(...)` contra ese endpoint cada 1–5
+   minutos.
+3. El loop in-process de `app/jobs/runner.py` se mantiene como está para desarrollo local y para
+   los tests de integración actuales (`tests/integration/test_ingest_and_jobs.py` no debería
+   necesitar cambios); se desactiva solo en producción vía config, si y cuando se elija un host
+   que tolere estar dormido entre pings.
+4. Pendiente de decidir: en qué host queda la API (algo que pueda dormir entre requests sin
+   romper nada, ya que dejaría de necesitar `min_machines_running=1`).
+
+**Riesgos / trade-offs, para no perderlos de vista:**
+
+- **Latencia de pickup**: un job pasa de "segundos" (polling cada 5s in-process) a "hasta el
+  intervalo del cron" (minutos). Irrelevante al volumen actual (~20 documentos/mes).
+- **No resuelve la pausa de Supabase Free por 7 días de inactividad** (fila ya existente en la
+  tabla de riesgos, sección 13): si el proyecto de Supabase está pausado, `pg_cron` tampoco
+  corre. Es un riesgo aparte que sigue necesitando su propia mitigación.
+- Confirmar que `pg_cron`/`pg_net` estén disponibles en el plan de Supabase que se use antes de
+  comprometerse al diseño (verificar en el dashboard del proyecto, no asumir).
+- El endpoint `/internal/jobs/run` es superficie nueva de ataque si el secreto se filtra: mismo
+  cuidado de inventario cerrado que ya se aplica a `service_role`.
+
+---
+
 ## Preguntas abiertas (no bloquean el arranque)
 
 1. **Tipo de cambio**: ¿uno mensual (cierre) o por transacción? El diseño soporta ambos; v1
