@@ -21,10 +21,10 @@ from app.security.csrf import CSRFError
 from app.security.exceptions import NotAuthenticatedError, NotAuthorizedError
 from app.settings import get_settings
 from app.web import auth as web_auth
-from app.web import documents as web_documents
 from app.web import dashboard as web_dashboard
-from app.web import settings_page as web_settings
+from app.web import documents as web_documents
 from app.web import review as web_review
+from app.web import settings_page as web_settings
 from app.web.middleware import SessionCookieMiddleware
 from app.web.templates import is_htmx, render
 

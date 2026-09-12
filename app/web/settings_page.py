@@ -9,8 +9,8 @@ respuesta correcta que el sistema pueda elegir solo.
 from __future__ import annotations
 
 from datetime import date
-from urllib.parse import quote
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
 from starlette.responses import RedirectResponse, Response
