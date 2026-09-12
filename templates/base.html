@@ -31,6 +31,18 @@
     th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); font-size: .9rem; }
     th { color: var(--muted); font-weight: 500; }
     .tag { font-size: .75rem; padding: .1rem .4rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .75rem; margin: 1rem 0 1.5rem; }
+    .kpi { border: 1px solid var(--line); border-radius: 8px; padding: .75rem .9rem; }
+    .kpi .label { color: var(--muted); font-size: .8rem; }
+    .kpi .value { font-size: 1.3rem; font-weight: 600; margin-top: .2rem; }
+    .kpi .delta.up { color: var(--bad); }
+    .kpi .delta.down { color: #1a7f37; }
+    @media (prefers-color-scheme: dark) { .kpi .delta.down { color: #4ade80; } }
+    .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+    .chart-box { border: 1px solid var(--line); border-radius: 8px; padding: .75rem; height: 20rem; }
+    .card { border: 1px solid var(--line); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+    .card h2 { font-size: 1.05rem; margin: 0 0 .75rem; }
+    select { padding: .4rem .55rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
   </style>
   {# HTMX solo para el polling del estado de los jobs y las ediciones inline de
      la Fase 4. Es lo unico de JavaScript que carga la app. #}
@@ -43,6 +55,7 @@
     <nav>
       <a href="/">Inicio</a>
       <a href="/documents">Documentos</a>
+      <a href="/settings">Configuración</a>
       {% if profile.is_admin %}<a href="/admin/invitations">Invitaciones</a>{% endif %}
       <form method="post" action="/logout" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -56,5 +69,6 @@
     {% if notice %}<div class="flash">{{ notice }}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
+  {% block scripts %}{% endblock %}
 </body>
 </html>
