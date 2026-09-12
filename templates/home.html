@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Inicio — Finance Consolidation{% endblock %}
+{% block content %}
+<h1>Hola{% if profile.display_name %}, {{ profile.display_name }}{% endif %}</h1>
+<p class="sub">
+  Sesión de <strong>{{ profile.email }}</strong> · moneda base {{ profile.base_currency }}
+  {% if profile.is_admin %}<span class="tag">admin</span>{% endif %}
+</p>
+
+<p>
+  Este perfil se leyó de la base con tu propia identidad propagada a Postgres, sin
+  ningún filtro por <code>user_id</code> escrito a mano: lo que ves es lo que RLS
+  te deja ver.
+</p>
+<p class="sub">La carga de resúmenes llega en la Fase 2.</p>
+{% endblock %}

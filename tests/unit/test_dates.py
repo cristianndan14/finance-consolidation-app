@@ -149,3 +149,43 @@ class TestIsPlausibleForStatement:
     )
     def test_fechas_sospechosas(self, value: date) -> None:
         assert not is_plausible_for_statement(value, closing=self.CLOSING)
+
+
+class TestMesesEnTexto:
+    """Galicia emite las líneas de consumo como `24-Ago-26`.
+
+    No es un caso exótico: sin esto, el modelo copia la fecha correctamente —que
+    es exactamente lo que se le pide— y la normalización descarta la transacción
+    entera. Un resumen real terminó procesándose "sin errores" y con cero
+    movimientos por este motivo.
+    """
+
+    @pytest.mark.parametrize(
+        ("raw", "esperado"),
+        [
+            ("06-Ago-26", date(2026, 8, 6)),
+            ("24-Ago-26", date(2026, 8, 24)),
+            ("24-AGO-2026", date(2026, 8, 24)),
+            ("24 ago 2026", date(2026, 8, 24)),
+            ("1/dic/25", date(2025, 12, 1)),
+            ("15.Mar.26", date(2026, 3, 15)),
+            ("3-Set-26", date(2026, 9, 3)),  # en Argentina se abrevia así
+            ("3-Sep-26", date(2026, 9, 3)),
+            ("9-diciembre-2026", date(2026, 12, 9)),
+        ],
+    )
+    def test_con_año(self, raw: str, esperado: date) -> None:
+        assert parse_date(raw) == esperado
+
+    def test_sin_año_se_infiere_con_el_cierre(self) -> None:
+        assert parse_date("24-Ago", closing=date(2026, 9, 9)) == date(2026, 8, 24)
+
+    def test_el_cruce_de_año_tambien_funciona_con_mes_en_texto(self) -> None:
+        assert parse_date("20-Dic", closing=date(2026, 1, 5)) == date(2025, 12, 20)
+
+    def test_una_palabra_que_no_es_un_mes_no_se_acepta(self) -> None:
+        with pytest.raises(DateParseError):
+            parse_date("24-Xyz-26")
+
+    def test_el_punto_de_la_abreviatura_no_molesta(self) -> None:
+        assert parse_date("06-ago.-26") == date(2026, 8, 6)

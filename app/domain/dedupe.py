@@ -94,7 +94,11 @@ def dedupe_key(
 
 
 class HasDedupeKey(Protocol):
-    dedupe_key: str
+    # Declarado como propiedad de solo lectura y no como atributo: un
+    # atributo mutable en el Protocol excluiria a los dataclasses `frozen`,
+    # que es justamente lo que son las transacciones normalizadas.
+    @property
+    def dedupe_key(self) -> str: ...
 
 
 def assign_occurrence_indexes[T: HasDedupeKey](items: Sequence[T]) -> list[tuple[T, int]]:

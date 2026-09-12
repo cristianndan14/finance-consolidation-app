@@ -44,8 +44,16 @@ begin
       create function auth.uid() returns uuid
       language sql stable
       as $body$
+        -- El nullif va sobre el SETTING y antes del cast, no despues. Es la
+        -- diferencia entre andar y romperse: `set_config(..., is_local => true)`
+        -- no borra el parametro al hacer COMMIT, lo deja en cadena VACIA. En una
+        -- conexion del pool que ya sirvio una request, castear '' a json tira
+        -- "invalid input syntax for type json" en lugar de devolver NULL, y
+        -- entonces cualquier query sin identidad (el runner tomando un job)
+        -- falla en vez de simplemente no ver nada.
+        -- Es tambien la forma en que Supabase define la suya.
         select nullif(
-          current_setting('request.jwt.claims', true)::json ->> 'sub',
+          nullif(current_setting('request.jwt.claims', true), '')::json ->> 'sub',
           ''
         )::uuid
       $body$;

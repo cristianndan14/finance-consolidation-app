@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ document.original_filename }} — Finance Consolidation{% endblock %}
+{% block content %}
+<h1>{{ document.original_filename }}</h1>
+<p class="sub">
+  Subido el {{ document.uploaded_at.strftime('%d/%m/%Y %H:%M') }} ·
+  {{ document.page_count or '—' }} páginas ·
+  {{ '%.1f'|format(document.byte_size / 1024) }} KB
+  {% if document.was_encrypted %}· <span class="tag">venía con contraseña</span>{% endif %}
+</p>
+
+{% if already_imported %}
+<div class="flash">Ese archivo ya estaba importado: este es el documento que ya tenías.</div>
+{% endif %}
+
+{% include "partials/document_status.html" %}
+
+<p style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+  <a href="/documents/{{ document.id }}/download">Descargar el PDF</a>
+  <form method="post" action="/documents/{{ document.id }}/reprocess" style="margin:0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="quiet" type="submit">Reprocesar</button>
+  </form>
+  {% if text and text.has_text_layer %}
+  {# Solo la etapa 2: relee el texto guardado sin volver a bajar el PDF. Es lo
+     que hace barato reprocesar despues de mejorar un prompt. #}
+  <form method="post" action="/documents/{{ document.id }}/reparse" style="margin:0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="quiet" type="submit">Volver a extraer transacciones</button>
+  </form>
+  {% endif %}
+</p>
+
+{% if statements %}
+<h2 style="font-size:1rem;margin-top:2rem">Resúmenes extraídos</h2>
+<table>
+  <thead>
+    <tr><th>Moneda</th><th>Período</th><th style="text-align:right">Consumos declarados</th><th>Estado</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for s in statements %}
+    <tr>
+      <td>{{ s.currency }}</td>
+      <td>{{ '%02d'|format(s.period_month) }}/{{ s.period_year }}</td>
+      <td style="text-align:right">{% if s.new_charges is not none %}{{ s.new_charges | ars }}{% else %}—{% endif %}</td>
+      <td>
+        <span class="tag">{{ s.status }}</span>
+        {% if s.accepted_delta %}<span class="tag">Δ {{ s.accepted_delta | ars }}</span>{% endif %}
+      </td>
+      <td><a href="/statements/{{ s.id }}/review">Revisar</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if text %}
+<h2 style="font-size:1rem;margin-top:2rem">Texto extraído</h2>
+<p class="sub">
+  {{ text.char_count }} caracteres en {{ text.page_count }} páginas ·
+  {{ text.extractor }} {{ text.extractor_version }}
+</p>
+{% for page in text.page_texts %}
+<details>
+  <summary>Página {{ page.page }}</summary>
+  <pre style="overflow-x:auto;white-space:pre;font-size:.8rem;border:1px solid var(--line);padding:.75rem;border-radius:6px">{{ page.text_layout }}</pre>
+</details>
+{% endfor %}
+{% endif %}
+
+<p style="margin-top:2rem"><a href="/documents">Volver a la lista</a></p>
+{% endblock %}

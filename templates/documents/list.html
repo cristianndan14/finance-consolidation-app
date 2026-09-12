@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Documentos — Finance Consolidation{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:baseline;gap:1rem">
+  <h1>Documentos</h1>
+  <a href="/documents/upload" style="margin-left:auto">Subir resumen</a>
+</div>
+<p class="sub">Cada PDF pasa por la etapa 1: se extrae el texto, sin LLM.</p>
+
+{% if documents %}
+<table>
+  <thead>
+    <tr><th>Archivo</th><th>Estado</th><th>Páginas</th><th>Subido</th></tr>
+  </thead>
+  <tbody>
+    {% for doc in documents %}
+    <tr>
+      <td><a href="/documents/{{ doc.id }}">{{ doc.original_filename }}</a></td>
+      <td>
+        <span class="tag">{{ doc.status }}</span>
+        {% if doc.was_encrypted %}<span class="tag">venía con contraseña</span>{% endif %}
+      </td>
+      <td>{{ doc.page_count or '—' }}</td>
+      <td>{{ doc.uploaded_at.strftime('%d/%m/%Y %H:%M') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="sub">Todavía no subiste ningún resumen. <a href="/documents/upload">Empezá por acá.</a></p>
+{% endif %}
+{% endblock %}

@@ -2,6 +2,7 @@
 
 uv run python -m app.cli migrate
 uv run python -m app.cli seed
+uv run python -m app.cli parse <document_id> --user <user_id> --dry-run
 """
 
 from __future__ import annotations
@@ -12,8 +13,13 @@ import os
 import typer
 
 from app.cli import migrations
+from app.cli import parse as parse_cli
 
 cli = typer.Typer(help="Utilidades de Finance Consolidation", no_args_is_help=True)
+
+# La etapa 2 por linea de comandos: es como se iteran los prompts contra el
+# corpus real sin pasar por la UI.
+parse_cli.register(cli)
 
 
 def _migration_url(explicit: str | None) -> str:

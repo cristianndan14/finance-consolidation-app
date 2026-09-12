@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import calendar
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Final
@@ -37,6 +38,50 @@ _DATE_PATTERNS: Final = (
     (re.compile(r"^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$"), ("d", "m", "y")),
     # es-AR sin año: 15/03, 15-03
     (re.compile(r"^(\d{1,2})[/\-.](\d{1,2})$"), ("d", "m")),
+)
+
+# Los meses en texto no son un caso exotico: Galicia emite las lineas de consumo
+# como `24-Ago-26` y otros emisores usan `24 AGO 2026`. Sin esto, el modelo copia
+# la fecha correctamente (que es lo que se le pide) y la normalizacion descarta
+# la transaccion entera, con lo cual un resumen se procesa "sin errores" y
+# termina con cero movimientos.
+#
+# `set` esta porque en Argentina septiembre se abrevia tanto `sep` como `set`.
+_MONTHS_ES: Final[dict[str, int]] = {
+    "ene": 1,
+    "enero": 1,
+    "feb": 2,
+    "febrero": 2,
+    "mar": 3,
+    "marzo": 3,
+    "abr": 4,
+    "abril": 4,
+    "may": 5,
+    "mayo": 5,
+    "jun": 6,
+    "junio": 6,
+    "jul": 7,
+    "julio": 7,
+    "ago": 8,
+    "agosto": 8,
+    "sep": 9,
+    "set": 9,
+    "septiembre": 9,
+    "setiembre": 9,
+    "oct": 10,
+    "octubre": 10,
+    "nov": 11,
+    "noviembre": 11,
+    "dic": 12,
+    "diciembre": 12,
+}
+
+# Con año (`06-Ago-26`, `6 AGO 2026`) y sin el (`06-Ago`).
+_TEXT_MONTH_WITH_YEAR: Final = re.compile(
+    r"^(\d{1,2})[\s/\-.]+([a-záéíóúñ]{3,10})\.?[\s/\-.]+(\d{2,4})$", re.IGNORECASE
+)
+_TEXT_MONTH_NO_YEAR: Final = re.compile(
+    r"^(\d{1,2})[\s/\-.]+([a-záéíóúñ]{3,10})\.?$", re.IGNORECASE
 )
 
 
@@ -147,30 +192,57 @@ def parse_date(raw: str, *, closing: date | None = None) -> date:
     if not text:
         raise DateParseError("fecha vacia")
 
+    parsed = _match_numeric(text) or _match_text_month(text)
+    if parsed is None:
+        raise DateParseError(f"formato de fecha no reconocido: {raw!r}")
+
+    day, month, year_part = parsed
+    if year_part is None:
+        if closing is None:
+            raise DateParseError(
+                f"{raw!r} no trae año y no se paso la fecha de cierre para inferirlo"
+            )
+        year = infer_year(day, month, closing=closing)
+    else:
+        year = _expand_two_digit_year(year_part)
+
+    try:
+        return date(year, month, day)
+    except ValueError as exc:
+        raise DateParseError(f"{raw!r} no es una fecha valida: {exc}") from exc
+
+
+def _match_numeric(text: str) -> tuple[int, int, int | None] | None:
+    """`15/03/2026`, `15-03`, `2026-03-15`."""
     for pattern, order in _DATE_PATTERNS:
         match = pattern.match(text)
         if not match:
             continue
 
         parts = dict(zip(order, (int(g) for g in match.groups()), strict=True))
-        day = parts["d"]
-        month = parts["m"]
+        return parts["d"], parts["m"], parts.get("y")
+    return None
 
-        if "y" not in parts:
-            if closing is None:
-                raise DateParseError(
-                    f"{raw!r} no trae año y no se paso la fecha de cierre para inferirlo"
-                )
-            year = infer_year(day, month, closing=closing)
-        else:
-            year = _expand_two_digit_year(parts["y"])
 
-        try:
-            return date(year, month, day)
-        except ValueError as exc:
-            raise DateParseError(f"{raw!r} no es una fecha valida: {exc}") from exc
+def _match_text_month(text: str) -> tuple[int, int, int | None] | None:
+    """`06-Ago-26`, `6 AGO 2026`, `06-Ago`. None si el mes no es un mes."""
+    match = _TEXT_MONTH_WITH_YEAR.match(text)
+    if match:
+        month = _MONTHS_ES.get(_fold(match.group(2)))
+        return (int(match.group(1)), month, int(match.group(3))) if month else None
 
-    raise DateParseError(f"formato de fecha no reconocido: {raw!r}")
+    match = _TEXT_MONTH_NO_YEAR.match(text)
+    if match:
+        month = _MONTHS_ES.get(_fold(match.group(2)))
+        return (int(match.group(1)), month, None) if month else None
+
+    return None
+
+
+def _fold(name: str) -> str:
+    """Minusculas y sin acentos: `Ago`, `AGO` y `ago.` son el mismo mes."""
+    normalized = unicodedata.normalize("NFKD", name.lower())
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
 
 def _expand_two_digit_year(year: int) -> int:

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Revisar {{ statement.currency }} {{ '%02d'|format(statement.period_month) }}/{{ statement.period_year }} — Finance Consolidation{% endblock %}
+{% block content %}
+
+<h1>Revisar el resumen</h1>
+<p class="sub">
+  {{ statement.currency }} ·
+  {{ '%02d'|format(statement.period_month) }}/{{ statement.period_year }}
+  {% if statement.closing_date %}· cierre {{ statement.closing_date.strftime('%d/%m/%Y') }}{% endif %}
+  {% if document %}· <a href="/documents/{{ document.id }}">{{ document.original_filename }}</a>{% endif %}
+</p>
+
+{# El panel entero se reemplaza en cada accion: el banner de cuadre depende de
+   la suma de todas las filas, asi que devolver solo la fila editada dejaria el
+   delta viejo en pantalla. #}
+{% include "review/_panel.html" %}
+
+{% endblock %}
