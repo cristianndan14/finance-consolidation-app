@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Subir resumen — Finance Consolidation{% endblock %}
+{% block content %}
+<h1>Subir resumen</h1>
+<p class="sub">PDF de hasta {{ max_mb }} MB. Si el emisor lo manda protegido (Galicia,
+Santander y BBVA usan el DNI), poné la contraseña: se usa para descifrarlo y no se guarda.</p>
+
+<form class="stack" method="post" action="/documents" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>
+    Archivo
+    <input type="file" name="file" accept="application/pdf" required>
+  </label>
+  <label>
+    Contraseña del PDF (opcional)
+    <input type="password" name="pdf_password" autocomplete="off"
+           {% if ask_password %}autofocus{% endif %}>
+  </label>
+  <button type="submit">Subir</button>
+</form>
+{% endblock %}

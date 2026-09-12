@@ -1,0 +1,27 @@
+{# Fragmento de estado. Se refresca solo mientras haya trabajo pendiente:
+   cuando el documento llega a un estado final sale sin hx-trigger y el polling
+   se detiene sin que nadie lo cancele. #}
+<div id="document-status"
+     {% if document.is_processing %}
+     hx-get="/documents/{{ document.id }}/status"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {% endif %}>
+  {% if document.status == 'uploaded' %}
+    <div class="flash">
+      Procesando el PDF…
+      {% if job and job.attempts > 1 %}(intento {{ job.attempts }} de {{ job.max_attempts }}){% endif %}
+    </div>
+  {% elif document.status == 'failed' %}
+    <div class="flash error">
+      {% if document.failure_reason == 'no_text_layer' %}
+        Este PDF no tiene texto seleccionable: parece un escaneo. El sistema no usa OCR,
+        así que no puede procesarlo.
+      {% else %}
+        Falló el procesamiento{% if job and job.error %}: {{ job.error }}{% endif %}
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="flash">Texto extraído.</div>
+  {% endif %}
+</div>
