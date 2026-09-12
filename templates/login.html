@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Ingresar — Finance Consolidation{% endblock %}
+{% block content %}
+<h1>Ingresar</h1>
+<p class="sub">El acceso es por invitación. Si no tenés cuenta, pedile una invitación al admin.</p>
+
+<form class="stack" method="post" action="/login">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label>
+    Email
+    <input type="email" name="email" value="{{ email or '' }}" autocomplete="username" required autofocus>
+  </label>
+  <label>
+    Contraseña
+    <input type="password" name="password" autocomplete="current-password" required>
+  </label>
+  <button type="submit">Ingresar</button>
+</form>
+{% endblock %}

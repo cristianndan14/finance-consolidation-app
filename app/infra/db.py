@@ -157,6 +157,24 @@ async def system_tx(user_id: str) -> AsyncIterator[AsyncConnection]:
         yield conn
 
 
+@asynccontextmanager
+async def runtime_tx() -> AsyncIterator[AsyncConnection]:
+    """Transaccion SIN identidad de usuario, como `app_runtime` pelado.
+
+    Existe para exactamente dos operaciones, las unicas del sistema que cruzan
+    usuarios: tomar el proximo job de la cola y reciclar los huerfanos. Las dos
+    son funciones `security definer` cuyo `execute` esta otorgado solo a
+    `app_runtime` (ver la migracion `job_dispatch`).
+
+    **No sirve para leer datos de negocio**: sin `request.jwt.claims`, `auth.uid()`
+    es NULL y las politicas no matchean nada, asi que un select devuelve cero
+    filas. Ese es justamente el comportamiento deseado — si alguien la usa por
+    error para leer documentos, no ve los de otro: no ve ninguno.
+    """
+    async with get_engine().begin() as conn:
+        yield conn
+
+
 async def check_connection() -> dict[str, Any]:
     """Diagnostico para /healthz/db.
 

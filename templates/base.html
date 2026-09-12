@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Finance Consolidation{% endblock %}</title>
+  {# Tailwind se compila en la Fase 5, cuando exista el dashboard. Hasta
+     entonces, lo minimo para que las pantallas de auth sean legibles. #}
+  <style>
+    :root { color-scheme: light dark; --fg: #1a1a1a; --bg: #fbfbfa; --muted: #6b6b6b; --line: #e3e3e0; --accent: #1f6feb; --bad: #b42318; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg: #ececec; --bg: #17181a; --muted: #9a9a9a; --line: #303236; --accent: #6ea8fe; --bad: #ff8b7d; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    header { display: flex; align-items: baseline; gap: 1rem; padding: .9rem 1.25rem; border-bottom: 1px solid var(--line); }
+    header .brand { font-weight: 600; }
+    header nav { display: flex; gap: 1rem; margin-left: auto; align-items: baseline; }
+    main { max-width: 60rem; margin: 0 auto; padding: 2rem 1.25rem; }
+    a { color: var(--accent); }
+    h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+    p.sub { color: var(--muted); margin: 0 0 1.5rem; }
+    form.stack { display: grid; gap: .75rem; max-width: 22rem; }
+    label { display: grid; gap: .3rem; font-size: .85rem; color: var(--muted); }
+    input[type=email], input[type=password], input[type=text] { padding: .55rem .65rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+    button { padding: .55rem .9rem; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+    button.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+    .flash { padding: .6rem .75rem; border-radius: 6px; border: 1px solid var(--line); margin-bottom: 1rem; }
+    .flash.error { border-color: var(--bad); color: var(--bad); }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); font-size: .9rem; }
+    th { color: var(--muted); font-weight: 500; }
+    .tag { font-size: .75rem; padding: .1rem .4rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+  </style>
+  {# HTMX solo para el polling del estado de los jobs y las ediciones inline de
+     la Fase 4. Es lo unico de JavaScript que carga la app. #}
+  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous" defer></script>
+</head>
+<body>
+  {% if profile is defined and profile %}
+  <header>
+    <span class="brand">Finance Consolidation</span>
+    <nav>
+      <a href="/">Inicio</a>
+      <a href="/documents">Documentos</a>
+      {% if profile.is_admin %}<a href="/admin/invitations">Invitaciones</a>{% endif %}
+      <form method="post" action="/logout" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="quiet" type="submit">Salir</button>
+      </form>
+    </nav>
+  </header>
+  {% endif %}
+  <main>
+    {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+    {% if notice %}<div class="flash">{{ notice }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

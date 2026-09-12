@@ -58,6 +58,27 @@ async def migrated_db() -> AsyncIterator[str]:
 
 
 @pytest_asyncio.fixture
+async def app_runtime_engine(migrated_db: str) -> AsyncIterator[None]:
+    """Inicializa el engine de `app.infra.db` apuntando a la base de prueba.
+
+    Los tests que ejercitan repositorios necesitan pasar por `user_tx()` — que es
+    el unico lugar que setea el contexto de RLS — y `user_tx()` usa el engine
+    global del modulo. Se conecta como `app_runtime`, igual que produccion: como
+    owner, RLS no aplicaria y el test no probaria nada.
+    """
+    from app.infra import db
+    from app.settings import Settings
+
+    dsn = _app_runtime_dsn(migrated_db).replace("postgresql://", "postgresql+asyncpg://", 1)
+    await db.dispose_engine()
+    db.init_engine(Settings(_env_file=None, database_url=dsn))
+    try:
+        yield
+    finally:
+        await db.dispose_engine()
+
+
+@pytest_asyncio.fixture
 async def owner_conn(migrated_db: str) -> AsyncIterator[asyncpg.Connection]:
     """Conexion como owner. Solo para armar datos previos y para introspeccion."""
     conn = await asyncpg.connect(_plain_dsn(migrated_db))

@@ -1,0 +1,205 @@
+{#
+  Banner de cuadre + acciones + tabla. Es la unidad que se reemplaza entera en
+  cada mutacion (ver app/web/review.py).
+#}
+<div id="review-panel">
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+{# ─── Banner de cuadre ─────────────────────────────────────────────────────
+
+  La escalera del resumen, no el movimiento neto. La verificación interna compara
+  `sum(amount × direction)` contra `total_a_pagar − saldo_anterior`, pero ese
+  número no está impreso en ninguna parte del PDF: mostrarlo solo a él hacía que
+  una extracción correcta pareciera equivocada, porque el usuario busca el total
+  a pagar que conoce y no lo encontraba.
+
+  La diferencia es idéntica en las dos formas (los dos lados llevan el mismo
+  saldo anterior sumado), así que esto no relaja la verificación: la expresa en
+  los términos en que se puede contrastar contra el papel.
+#}
+{% for balance in state.balances %}
+<div class="flash {% if not balance.balanced %}error{% endif %}" style="margin-bottom:.75rem">
+  <div style="display:flex;gap:.75rem;align-items:baseline;flex-wrap:wrap">
+    <strong style="font-size:1.05rem">{{ balance.currency }}</strong>
+    {% if balance.balanced %}
+      <span class="tag">cuadra con el resumen</span>
+    {% elif balance.declared is none %}
+      <span class="tag">sin totales para verificar</span>
+    {% else %}
+      <span><strong>diferencia sin explicar {{ balance.delta | ars }}</strong></span>
+    {% endif %}
+    <span style="margin-left:auto;color:var(--muted);font-size:.85rem">
+      {{ balance.count }} transacciones
+      {%- if balance.pending %} · {{ balance.pending }} sin revisar{% endif %}
+      {%- if balance.rejected %} · {{ balance.rejected }} descartadas{% endif %}
+    </span>
+  </div>
+
+  <table style="margin-top:.5rem;max-width:34rem">
+    <tbody>
+      {% if balance.previous_balance is not none %}
+      <tr>
+        <td style="border:0;padding:.15rem 0;color:var(--muted)">Saldo anterior</td>
+        <td style="border:0;padding:.15rem 0;text-align:right">{{ balance.previous_balance | ars }}</td>
+        <td style="border:0"></td>
+      </tr>
+      {% endif %}
+      <tr>
+        <td style="border:0;padding:.15rem 0;color:var(--muted)">Pagos y créditos</td>
+        <td style="border:0;padding:.15rem 0;text-align:right">−{{ balance.credits | ars }}</td>
+        <td style="border:0"></td>
+      </tr>
+      <tr>
+        <td style="border:0;padding:.15rem 0;color:var(--muted)">Cargos del período</td>
+        <td style="border:0;padding:.15rem 0;text-align:right">+{{ balance.charges | ars }}</td>
+        <td style="border:0"></td>
+      </tr>
+      <tr>
+        <td style="padding:.3rem 0;font-weight:600">
+          {% if balance.computed_total_due is not none %}Total a pagar{% else %}Movimiento del período{% endif %}
+        </td>
+        <td style="padding:.3rem 0;text-align:right;font-weight:600">
+          {{ (balance.computed_total_due if balance.computed_total_due is not none else balance.computed) | ars }}
+        </td>
+        <td style="padding:.3rem 0 .3rem .75rem;color:var(--muted);font-size:.85rem">
+          {% if balance.declared_total_due is not none %}
+            el resumen dice {{ balance.declared_total_due | ars }}
+          {% elif balance.declared is not none %}
+            esperado {{ balance.declared | ars }} ({{ balance.basis }})
+          {% else %}
+            {{ balance.basis }}
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+
+{# ─── Lo que sobrevivio a una re-corrida ─────────────────────────────────── #}
+{% if state.orphans %}
+<div class="flash error">
+  <strong>{{ state.orphans | length }} transacciones que ya habías revisado no aparecen en la última extracción.</strong>
+  Se conservaron —el sistema nunca borra lo que tocaste— pero siguen sumando al total.
+  Si el modelo ahora las lee de otra forma, vas a ver la versión nueva además de la vieja:
+  en ese caso descartá la que sobra.
+  <ul style="margin:.4rem 0 0;padding-left:1.1rem">
+    {% for tx in state.orphans %}
+    <li>{{ tx.posted_date.strftime('%d/%m/%Y') }} · {{ tx.description_raw }} · {{ tx.amount | ars }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# ─── Confirmacion ───────────────────────────────────────────────────────── #}
+<div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin:1rem 0">
+  {% if statement.is_confirmed %}
+    <span class="tag">confirmado</span>
+    {% if statement.accepted_delta %}
+      <span style="color:var(--muted)">con una diferencia aceptada de {{ statement.accepted_delta | ars }}</span>
+    {% endif %}
+    <form hx-post="/statements/{{ statement.id }}/reopen"
+          hx-target="#review-panel" hx-swap="outerHTML"
+          method="post" action="/statements/{{ statement.id }}/reopen" style="margin:0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="quiet" type="submit">Reabrir para editar</button>
+    </form>
+  {% else %}
+    <form hx-post="/statements/{{ statement.id }}/confirm"
+          hx-target="#review-panel" hx-swap="outerHTML"
+          method="post" action="/statements/{{ statement.id }}/confirm"
+          style="margin:0;display:flex;gap:.75rem;align-items:center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if not state.balanced %}
+        <label style="flex-direction:row;align-items:center;gap:.4rem">
+          <input type="checkbox" name="accept_delta" value="1">
+          aceptar la diferencia
+        </label>
+      {% endif %}
+      <button type="submit" {% if not state.can_confirm %}disabled{% endif %}>
+        Confirmar el resumen
+      </button>
+    </form>
+    {% if state.blocking_reason %}
+      <span style="color:var(--muted)">{{ state.blocking_reason }}</span>
+    {% endif %}
+  {% endif %}
+</div>
+
+{# ─── Acciones masivas ───────────────────────────────────────────────────── #}
+{% if not statement.is_confirmed %}
+<form hx-post="/statements/{{ statement.id }}/bulk"
+      hx-target="#review-panel" hx-swap="outerHTML"
+      method="post" action="/statements/{{ statement.id }}/bulk"
+      style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="action" value="confirm">
+  <button class="quiet" type="submit">Confirmar todo lo que queda sin revisar</button>
+  <span style="color:var(--muted);font-size:.85rem">
+    Revisás las pocas que están mal y aceptás el resto en bloque.
+  </span>
+</form>
+{% endif %}
+
+{# ─── La tabla ───────────────────────────────────────────────────────────── #}
+<table>
+  <thead>
+    <tr>
+      <th style="width:6.5rem">Fecha</th>
+      <th>Descripción</th>
+      <th style="width:7rem">Tipo</th>
+      <th style="width:5rem">Sentido</th>
+      <th style="width:8rem;text-align:right">Monto</th>
+      <th style="width:11rem">Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for tx in state.transactions %}
+      {% include "review/_row.html" %}
+    {% else %}
+      <tr><td colspan="6" style="color:var(--muted)">
+        El modelo no extrajo ninguna transacción de este resumen.
+        Podés agregarlas a mano abajo, o volver al documento y reprocesarlo.
+      </td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# ─── Agregar a mano ─────────────────────────────────────────────────────── #}
+{% if not statement.is_confirmed %}
+<details style="margin-top:1.5rem">
+  <summary>Agregar una transacción que falta</summary>
+  <p class="sub" style="margin-top:.5rem">
+    Entra sin línea de origen, así queda visible que no salió del PDF.
+  </p>
+  <form hx-post="/statements/{{ statement.id }}/transactions"
+        hx-target="#review-panel" hx-swap="outerHTML"
+        method="post" action="/statements/{{ statement.id }}/transactions"
+        style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Fecha<input type="text" name="posted_date" placeholder="15/03" required style="width:7rem"></label>
+    <label style="flex:1 1 14rem">Descripción<input type="text" name="description_raw" required></label>
+    <label>Tipo
+      <select name="kind">
+        {% for kind in kinds %}<option value="{{ kind }}" {% if kind == 'charge' %}selected{% endif %}>{{ kind }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Sentido
+      <select name="direction">
+        <option value="1">cargo</option>
+        <option value="-1">crédito</option>
+      </select>
+    </label>
+    <label>Monto<input type="text" name="amount" placeholder="1.234,56" required style="width:8rem"></label>
+    <button type="submit">Agregar</button>
+  </form>
+</details>
+{% endif %}
+
+<p style="margin-top:2rem">
+  {% if document %}<a href="/documents/{{ document.id }}">Volver al documento</a> · {% endif %}
+  <a href="/documents">Todos los documentos</a>
+</p>
+
+</div>
