@@ -132,9 +132,7 @@ class FakeExtractor:
     ) -> LLMResult[MerchantsPayload]:
         # Los ejemplos quedan registrados para poder afirmar que el few-shot
         # llego al modelo: el cassette no cambia segun el prompt.
-        self.calls.append(
-            {"call": "merchants", "keys": list(raw_keys), "examples": list(examples)}
-        )
+        self.calls.append({"call": "merchants", "keys": list(raw_keys), "examples": list(examples)})
         return self._result(self._merchants, prompt_version)
 
     async def aclose(self) -> None:
