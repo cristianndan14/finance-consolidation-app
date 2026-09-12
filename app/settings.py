@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     # app/infra/supabase_admin.py, y scripts/check_service_role.py lo verifica.
     supabase_service_role_key: SecretStr = SecretStr("")
 
+    # Los proyectos nuevos de Supabase firman los JWT con claves asimetricas y
+    # publican la publica en JWKS, que es el camino preferido: rotar la clave no
+    # obliga a redeployar. El Supabase local todavia firma con HS256 y un secreto
+    # compartido, asi que se acepta tambien cuando esta configurado. El algoritmo
+    # lo decide el header del token, pero solo entre los permitidos.
+    supabase_jwt_secret: SecretStr = SecretStr("")
+    jwks_cache_ttl_seconds: int = 3600
+
     # ─── Postgres ────────────────────────────────────────────────────────────
     # Rol app_runtime, SIN BYPASSRLS. Es lo que hace que RLS sea real.
     database_url: str = "postgresql+asyncpg://app_runtime:app_runtime_dev@127.0.0.1:54322/postgres"
@@ -54,6 +62,15 @@ class Settings(BaseSettings):
     session_secret: SecretStr = SecretStr("")
     session_cookie_name: str = "fc_session"
     session_max_age_seconds: int = 60 * 60 * 24 * 14
+
+    # Margen con el que se renueva el access token antes de que expire. Sin
+    # margen, un token que vence entre la validacion y el query de Postgres deja
+    # la request en un 401 que el usuario no puede explicar.
+    session_refresh_margin_seconds: int = 120
+
+    # `Secure` en la cookie se activa solo con HTTPS. En produccion es obligatorio;
+    # en desarrollo el navegador descartaria la cookie sobre http://localhost.
+    session_cookie_secure: bool | None = None
 
     # ─── LLM ─────────────────────────────────────────────────────────────────
     llm_provider: LLMProvider = "gemini"
@@ -135,6 +152,13 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.env == "production"
+
+    @property
+    def cookie_secure(self) -> bool:
+        """Si la cookie de sesion se manda solo por HTTPS."""
+        if self.session_cookie_secure is not None:
+            return self.session_cookie_secure
+        return self.is_production
 
     @property
     def jwks_url(self) -> str:

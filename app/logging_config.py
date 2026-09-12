@@ -47,6 +47,11 @@ REDACT_KEYS: frozenset[str] = frozenset(
         "api_key",
         "gemini_api_key",
         "session_secret",
+        # Una URL firmada de Storage es una credencial: quien la tenga baja el
+        # resumen sin autenticarse.
+        "download_url",
+        "signed_url",
+        "signedurl",
         "anon_key",
         "cookie",
         "set-cookie",
@@ -90,7 +95,18 @@ def _scrub(key: str, value: Any, depth: int = 0) -> Any:
 
 
 def configure_logging(*, level: str = "INFO", json_logs: bool = False) -> None:
-    """Configura structlog y el logging stdlib para que compartan la salida."""
+    """Configura structlog y el logging stdlib para que compartan la salida.
+
+    Todo sale por el logging de la biblioteca estandar: los eventos de structlog
+    se envuelven con `wrap_for_formatter` y los renderiza el `ProcessorFormatter`
+    del handler, igual que los de uvicorn, sqlalchemy o httpx. Es lo que hace que
+    haya un solo formato y, sobre todo, que **la redaccion de PII se aplique
+    tambien a los logs de las librerias**: si structlog escribiera directo a
+    stderr por su cuenta, un log de uvicorn con una URL firmada saldria en claro.
+
+    (El factory tiene que ser el de stdlib: `add_logger_name` lee `logger.name`,
+    que el logger propio de structlog no tiene.)
+    """
     shared: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
@@ -103,25 +119,29 @@ def configure_logging(*, level: str = "INFO", json_logs: bool = False) -> None:
     renderer: Any = (
         structlog.processors.JSONRenderer()
         if json_logs
+        # El ConsoleRenderer formatea las excepciones el mismo; el JSON necesita
+        # que ya sean texto, y de eso se encarga `format_exc_info`.
         else structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty())
     )
+    exception_processors: list[Any] = [structlog.processors.format_exc_info] if json_logs else []
 
     structlog.configure(
         processors=[
             *shared,
-            structlog.processors.format_exc_info,
-            renderer,
+            *exception_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelNamesMapping()[level]),
-        logger_factory=structlog.WriteLoggerFactory(file=sys.stderr),
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
-    # Los loggers de librerias (uvicorn, sqlalchemy, httpx) pasan por el mismo formato.
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
         structlog.stdlib.ProcessorFormatter(
-            foreign_pre_chain=shared,
+            # Los eventos que no vienen de structlog (uvicorn, sqlalchemy) pasan
+            # por la misma cadena, redaccion incluida.
+            foreign_pre_chain=[*shared, *exception_processors],
             processors=[structlog.stdlib.ProcessorFormatter.remove_processors_meta, renderer],
         )
     )
