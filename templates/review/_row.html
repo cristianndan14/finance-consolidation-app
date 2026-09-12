@@ -1,0 +1,115 @@
+{#
+  Una fila editable. El formulario manda la fila entera; el servicio compara
+  contra lo que hay y solo registra en la bitácora los campos que cambiaron.
+
+  La `source_line` va debajo, en monoespaciada: verificar un dato tiene que ser
+  mirar dos renglones, no abrir el PDF en otra ventana.
+#}
+{% set sospechosa = tx.confidence is not none and tx.confidence < 0.5 %}
+<tr id="tx-{{ tx.id }}"
+    style="{% if tx.review_status == 'rejected' %}opacity:.45{% endif %}">
+  <td colspan="6" style="padding:0">
+    <form hx-post="/statements/{{ statement.id }}/transactions/{{ tx.id }}"
+          hx-target="#review-panel" hx-swap="outerHTML"
+          method="post" action="/statements/{{ statement.id }}/transactions/{{ tx.id }}"
+          style="margin:0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div style="display:flex;gap:.5rem;align-items:center;padding:.4rem .6rem;flex-wrap:wrap;
+                  {% if sospechosa %}border-left:3px solid var(--bad){% endif %}">
+
+        <input type="text" name="posted_date" value="{{ tx.posted_date.strftime('%d/%m/%Y') }}"
+               style="width:6.5rem" {% if statement.is_confirmed %}disabled{% endif %}>
+
+        <input type="text" name="description_raw" value="{{ tx.description_raw }}"
+               style="flex:1 1 16rem" {% if statement.is_confirmed %}disabled{% endif %}>
+
+        <select name="kind" style="width:7rem" {% if statement.is_confirmed %}disabled{% endif %}>
+          {% for kind in kinds %}
+            <option value="{{ kind }}" {% if kind == tx.kind %}selected{% endif %}>{{ kind }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="direction" style="width:5.5rem" {% if statement.is_confirmed %}disabled{% endif %}>
+          <option value="1" {% if tx.direction == 1 %}selected{% endif %}>cargo</option>
+          <option value="-1" {% if tx.direction == -1 %}selected{% endif %}>crédito</option>
+        </select>
+
+        <input type="text" name="amount" value="{{ tx.amount | ars }}"
+               style="width:8rem;text-align:right" {% if statement.is_confirmed %}disabled{% endif %}>
+
+        {% if not statement.is_confirmed %}
+          <button class="quiet" type="submit">Guardar</button>
+        {% endif %}
+
+        <span class="tag">{{ tx.review_status }}</span>
+        {% if tx.installment_number %}
+          <span class="tag">cuota {{ tx.installment_number }}/{{ tx.installment_total }}</span>
+        {% endif %}
+        {% if sospechosa %}
+          {# La marca el check de anclaje: cita una línea que no está en el PDF. #}
+          <span class="tag" style="color:var(--bad);border-color:var(--bad)">¿inventada?</span>
+        {% endif %}
+        {% if tx.source_line is none %}
+          <span class="tag">agregada a mano</span>
+        {% endif %}
+        {% if tx.id in state.orphan_ids %}
+          {# La última extracción no la produjo; sobrevivió porque la habías tocado. #}
+          <span class="tag" style="color:var(--bad);border-color:var(--bad)">ya no la extrae</span>
+        {% elif tx.id in state.conflict_ids %}
+          <span class="tag">el modelo propuso otro valor</span>
+        {% endif %}
+      </div>
+    </form>
+
+    {% if not statement.is_confirmed %}
+    <div style="display:flex;gap:.4rem;padding:0 .6rem .5rem;flex-wrap:wrap;align-items:center">
+      {% for action, etiqueta in (('confirm', 'Confirmar'), ('reject', 'Descartar'), ('reset', 'Volver a pendiente')) %}
+        {% if not (action == 'confirm' and tx.review_status == 'confirmed')
+              and not (action == 'reject' and tx.review_status == 'rejected')
+              and not (action == 'reset' and tx.review_status == 'pending') %}
+        <form hx-post="/statements/{{ statement.id }}/bulk"
+              hx-target="#review-panel" hx-swap="outerHTML"
+              method="post" action="/statements/{{ statement.id }}/bulk" style="margin:0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="action" value="{{ action }}">
+          <input type="hidden" name="transaction_ids" value="{{ tx.id }}">
+          <button class="quiet" type="submit" style="font-size:.8rem;padding:.2rem .5rem">{{ etiqueta }}</button>
+        </form>
+        {% endif %}
+      {% endfor %}
+
+      {% if tx.review_status != 'rejected' %}
+      <details style="margin-left:.5rem">
+        <summary style="font-size:.8rem;color:var(--muted);cursor:pointer">Dividir</summary>
+        <form hx-post="/statements/{{ statement.id }}/transactions/{{ tx.id }}/split"
+              hx-target="#review-panel" hx-swap="outerHTML"
+              method="post" action="/statements/{{ statement.id }}/transactions/{{ tx.id }}/split"
+              style="display:flex;gap:.4rem;align-items:end;flex-wrap:wrap;margin-top:.4rem">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% for n in (1, 2) %}
+          <label>Parte {{ n }}
+            <span style="display:flex;gap:.3rem">
+              <input type="text" name="part_description" placeholder="descripción" style="width:11rem">
+              <input type="text" name="part_amount" placeholder="monto" style="width:7rem">
+            </span>
+          </label>
+          {% endfor %}
+          <button class="quiet" type="submit">Dividir</button>
+          <span style="color:var(--muted);font-size:.8rem">
+            Las partes tienen que sumar {{ tx.amount | ars }}.
+          </span>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if tx.source_line %}
+    <div style="padding:0 .6rem .5rem">
+      <code style="font-size:.75rem;color:var(--muted);white-space:pre-wrap;word-break:break-all">{{ tx.source_line }}</code>
+      {% if tx.source_page %}<span class="tag">pág. {{ tx.source_page }}</span>{% endif %}
+    </div>
+    {% endif %}
+  </td>
+</tr>
