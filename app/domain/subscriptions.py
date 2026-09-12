@@ -150,23 +150,51 @@ def _eligible(item: Occurrence) -> bool:
 
 
 def _monthly_series(occurrences: Iterable[Occurrence]) -> list[Occurrence]:
-    """Una ocurrencia por mes, en orden, de la moneda que mas meses cubre.
+    """La racha vigente de la moneda que mas meses cubre: un candidato por mes.
 
     Dos cargos del mismo comercio en el mismo mes no invalidan la serie (una
-    suscripcion puede convivir con una compra suelta): se queda el ultimo, que es
-    el que refleja el precio vigente.
+    suscripcion puede convivir con una compra suelta): de cada mes se elige la
+    ocurrencia mas parecida en monto a la del mes anterior, no la ultima por
+    fecha. Elegir siempre la ultima hacia que una compra suelta posterior al
+    cargo de la suscripcion —un gimnasio que ademas vende indumentaria, un
+    comercio con plan— se convirtiera en el representante del mes, rompiera la
+    tolerancia de precio contra el mes previo, y tirara abajo la serie entera en
+    vez de solo ese mes.
+
+    Por el mismo motivo un mes atipico no mata la racha: corta la serie que
+    veniamos armando y arranca una nueva desde ese mes, asi que un mes raro en
+    medio de 18 meses de historial no le cuesta la deteccion a los otros 17.
     """
     eligible = [item for item in occurrences if _eligible(item)]
     if not eligible:
         return []
 
-    by_currency: dict[str, dict[int, Occurrence]] = {}
+    by_currency: dict[str, dict[int, list[Occurrence]]] = {}
     for item in sorted(eligible, key=lambda i: i.posted_date):
-        by_currency.setdefault(item.currency, {})[_month_index(item.posted_date)] = item
+        month_key = _month_index(item.posted_date)
+        by_currency.setdefault(item.currency, {}).setdefault(month_key, []).append(item)
 
     # Mezclar monedas daria una serie con saltos de monto que no son de precio.
-    best = max(by_currency.values(), key=len)
-    return [best[index] for index in sorted(best)]
+    months = max(by_currency.values(), key=len)
+    return _trailing_run(months)
+
+
+def _trailing_run(months: dict[int, list[Occurrence]]) -> list[Occurrence]:
+    """La racha que llega hasta el mes mas reciente: la suscripcion, si sigue viva."""
+    indices = sorted(months)
+    run: list[Occurrence] = [months[indices[0]][-1]]
+
+    for index in indices[1:]:
+        previous = run[-1]
+        candidates = months[index]
+        pick = min(candidates, key=lambda item: abs(item.amount - previous.amount))
+
+        if _consecutive_enough(previous, pick) and _same_price(previous.amount, pick.amount):
+            run.append(pick)
+        else:
+            run = [pick]
+
+    return run
 
 
 def _consecutive_enough(previous: Occurrence, current: Occurrence) -> bool:

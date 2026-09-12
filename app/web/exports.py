@@ -78,7 +78,7 @@ async def _load(
 async def _resolve_period(
     conn: db.AsyncConnection, year: int | None, month: int | None
 ) -> analytics.Period | None:
-    if year and month:
+    if year and month and 1 <= month <= 12:
         return analytics.Period(year=year, month=month)
     latest = await analytics.available_periods(conn, limit=1)
     return latest[0] if latest else None
@@ -90,17 +90,29 @@ def _filename(period: analytics.Period | None, extension: str) -> str:
     return f"transacciones-{period.year:04d}-{period.month:02d}.{extension}"
 
 
+# Caracteres que Excel/LibreOffice interpretan como el inicio de una formula.
+# `description`/`merchant_name` vienen del texto del PDF (via el LLM), no del
+# codigo: una linea que empiece asi ejecutaria como formula al abrir el export.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    if value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _row_values(row: export.ExportRow) -> tuple[str, str, str, str, str, str, str, str]:
     card = f"{row.issuer_name} ...{row.last4}" if row.issuer_name and row.last4 else ""
     return (
         row.posted_date.isoformat(),
-        row.description,
-        row.merchant_name,
-        row.category_name,
+        _csv_safe(row.description),
+        _csv_safe(row.merchant_name),
+        _csv_safe(row.category_name),
         str(row.amount),
         row.currency,
         row.kind,
-        card,
+        _csv_safe(card),
     )
 
 
@@ -126,13 +138,13 @@ def _rows_to_xlsx_bytes(rows: list[export.ExportRow]) -> bytes:
         sheet.append(
             (
                 row.posted_date,
-                row.description,
-                row.merchant_name,
-                row.category_name,
-                float(row.amount),
+                _csv_safe(row.description),
+                _csv_safe(row.merchant_name),
+                _csv_safe(row.category_name),
+                row.amount,
                 row.currency,
                 row.kind,
-                card,
+                _csv_safe(card),
             )
         )
 

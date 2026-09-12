@@ -43,6 +43,9 @@
         {% endif %}
 
         <span class="tag">{{ tx.review_status }}</span>
+        {% if statement.is_confirmed and tx.category_id %}
+          <span class="tag">{{ categories | selectattr('id', 'equalto', tx.category_id) | map(attribute='name') | first | default('sin categoria') }}</span>
+        {% endif %}
         {% if tx.installment_number %}
           <span class="tag">cuota {{ tx.installment_number }}/{{ tx.installment_total }}</span>
         {% endif %}
@@ -64,6 +67,19 @@
 
     {% if not statement.is_confirmed %}
     <div style="display:flex;gap:.4rem;padding:0 .6rem .5rem;flex-wrap:wrap;align-items:center">
+      <form hx-post="/statements/{{ statement.id }}/transactions/{{ tx.id }}/category"
+            hx-target="#review-panel" hx-swap="outerHTML"
+            method="post" action="/statements/{{ statement.id }}/transactions/{{ tx.id }}/category"
+            style="margin:0;display:flex;gap:.3rem;align-items:center">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <select name="category_id" style="font-size:.8rem" required>
+          <option value="" disabled {% if not tx.category_id %}selected{% endif %}>elegir categoría…</option>
+          {% for cat in categories %}
+            <option value="{{ cat.id }}" {% if cat.id == tx.category_id %}selected{% endif %}>{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="quiet" type="submit" style="font-size:.8rem;padding:.2rem .5rem">Categorizar</button>
+      </form>
       {% for action, etiqueta in (('confirm', 'Confirmar'), ('reject', 'Descartar'), ('reset', 'Volver a pendiente')) %}
         {% if not (action == 'confirm' and tx.review_status == 'confirmed')
               and not (action == 'reject' and tx.review_status == 'rejected')

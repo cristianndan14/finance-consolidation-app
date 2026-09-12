@@ -172,6 +172,45 @@ def test_no_se_mezclan_monedas() -> None:
     assert found.occurrences == 3
 
 
+def test_una_compra_suelta_el_mismo_mes_no_rompe_la_serie() -> None:
+    """El representante del mes es el mas parecido al mes anterior, no el ultimo por fecha.
+
+    Si el comercio ademas vende otra cosa (un gimnasio con indumentaria, un
+    supermercado con plan) y esa compra cae despues del cargo de la
+    suscripcion en el mismo mes, elegir "la ultima del mes" la convertiria en
+    el representante, rompería la tolerancia de precio contra el mes anterior
+    y tiraria abajo la deteccion de los otros meses, que si son consistentes.
+    """
+    found = detect(
+        occ(1, "4999.00"),
+        occ(2, "4999.00"),
+        occ(3, "4999.00", day=3),
+        occ(3, "35000.00", day=20),  # compra suelta, mas tarde en el mismo mes
+        occ(4, "4999.00"),
+        occ(5, "4999.00"),
+    )
+
+    assert found is not None
+    assert found.occurrences == 5
+    assert found.first_seen == date(2026, 1, 5)
+    assert found.last_seen == date(2026, 5, 5)
+    assert found.nominal_amount == Decimal("4999.00")
+
+
+def test_un_mes_atipico_al_inicio_no_mata_la_racha_posterior() -> None:
+    """Un mes fuera de tolerancia corta la racha en ese punto, no toda la serie."""
+    found = detect(
+        occ(1, "12000.00"),  # no es la suscripcion: un mes suelto, aislado
+        occ(2, "4999.00"),
+        occ(3, "4999.00"),
+        occ(4, "4999.00"),
+    )
+
+    assert found is not None
+    assert found.occurrences == 3
+    assert found.first_seen == date(2026, 2, 5)
+
+
 # ─── detect_all ──────────────────────────────────────────────────────────────
 def test_detect_all_devuelve_solo_las_series_que_califican() -> None:
     found = subscriptions.detect_all(

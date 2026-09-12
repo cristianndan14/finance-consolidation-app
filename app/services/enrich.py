@@ -395,9 +395,11 @@ async def _record_category_change(
         return
 
     old = await categories_repo.get(conn, current.category_id) if current.category_id else None
+    # `set_category` (arriba) ya inserto `category_id`: si no existiera, la FK de
+    # `transactions.category_id` habria fallado antes de llegar aca.
     new = await categories_repo.get(conn, category_id)
     if new is None:
-        raise EnrichError("esa categoria no existe", reason="category_not_found")
+        raise RuntimeError("category_id valido por la FK de transactions.category_id")
 
     await revisions_repo.record(
         conn,

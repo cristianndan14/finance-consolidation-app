@@ -32,8 +32,10 @@ from starlette.responses import RedirectResponse, Response
 from app.deps import CurrentProfileDep, CurrentUserDep, SettingsDep
 from app.infra import db
 from app.logging_config import get_logger
+from app.repositories import categories as categories_repo
 from app.repositories import documents as documents_repo
 from app.security import csrf
+from app.services import enrich as enrich_service
 from app.services import review as review_service
 from app.web.templates import is_htmx, render
 
@@ -56,6 +58,7 @@ async def review_page(
     async with db.user_tx(user.db_claims) as conn:
         state = await review_service.load(conn, statement_id, settings)
         document = await documents_repo.get(conn, state.statement.document_id) if state else None
+        categories = await categories_repo.list_active(conn)
 
     if state is None:
         return _not_found(request, profile, user, settings)
@@ -63,7 +66,7 @@ async def review_page(
     return render(
         request,
         "review/page.html",
-        _context(request, state, document, profile, user, settings),
+        _context(request, state, document, profile, user, settings, categories),
     )
 
 
@@ -93,6 +96,32 @@ async def edit_transaction(
             conn, transaction_id, _fields(form, review_service.EDITABLE_FIELDS)
         ),
     )
+
+
+@router.post("/{statement_id}/transactions/{transaction_id}/category", include_in_schema=False)
+async def set_category(
+    request: Request,
+    user: CurrentUserDep,
+    profile: CurrentProfileDep,
+    settings: SettingsDep,
+    statement_id: str,
+    transaction_id: str,
+) -> Response:
+    """Categoria a mano. Queda en `transaction_revisions`: es la materia prima
+    del few-shot que usa el enriquecimiento de comercios (app/llm/fewshot.py)."""
+    form = await request.form()
+    csrf.verify(_csrf_of(form), user.user_id, settings)
+
+    category_id = str(form.get("category_id", "")).strip()
+
+    async def _apply(conn: db.AsyncConnection) -> None:
+        if not category_id:
+            raise enrich_service.EnrichError("elegí una categoría", reason="category_required")
+        await enrich_service.recategorize(
+            conn, transaction_id=transaction_id, category_id=category_id
+        )
+
+    return await _mutate(request, user, profile, settings, statement_id, _apply)
 
 
 @router.post("/{statement_id}/bulk", include_in_schema=False)
@@ -259,14 +288,18 @@ async def _mutate(
         except review_service.ReviewError as exc:
             error = exc.message
             log.info("accion de revision rechazada", code=exc.code, detail=exc.message)
+        except enrich_service.EnrichError as exc:
+            error = exc.message
+            log.info("accion de recategorizacion rechazada", reason=exc.reason, detail=exc.message)
 
         state = await review_service.load(conn, statement_id, settings)
         document = await documents_repo.get(conn, state.statement.document_id) if state else None
+        categories = await categories_repo.list_active(conn)
 
     if state is None:
         return _not_found(request, profile, user, settings)
 
-    context = _context(request, state, document, profile, user, settings)
+    context = _context(request, state, document, profile, user, settings, categories)
     context["error"] = error
 
     if is_htmx(request):
@@ -287,6 +320,7 @@ def _context(
     profile: CurrentProfileDep,
     user: CurrentUserDep,
     settings: SettingsDep,
+    categories: list[categories_repo.Category],
 ) -> dict[str, Any]:
     return {
         "profile": profile,
@@ -294,6 +328,7 @@ def _context(
         "statement": state.statement,
         "document": document,
         "kinds": sorted(review_service.KINDS),
+        "categories": categories,
         "csrf_token": csrf.issue(user.user_id, settings),
     }
 
