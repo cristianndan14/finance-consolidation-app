@@ -3,6 +3,7 @@
 # Solo se versionan los textos anonimizados (tests/fixtures/texts/) y los
 # PDFs sinteticos generados por reportlab (tests/fixtures/pdfs/).
 tests/fixtures/private/
+tests/fixtures/expected/
 input/
 *.pdf
 !tests/fixtures/pdfs/*.pdf
