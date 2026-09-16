@@ -26,7 +26,7 @@ def test_csv_header_when_no_rows() -> None:
     lines = text.strip().splitlines()
 
     assert len(lines) == 1
-    assert lines[0].startswith("Fecha,Descripcion")
+    assert lines[0].startswith("Fecha;Descripcion")
 
 
 def test_csv_includes_row_data() -> None:
@@ -37,7 +37,7 @@ def test_csv_includes_row_data() -> None:
     assert len(lines) == 2
     assert "2026-03-05" in lines[1]
     assert "Supermercado XYZ" in lines[1]
-    assert "-12345.67" in lines[1]
+    assert "-12345,67" in lines[1]
     assert "Visa ...1234" in lines[1]
 
 

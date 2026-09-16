@@ -109,7 +109,7 @@ def _row_values(row: export.ExportRow) -> tuple[str, str, str, str, str, str, st
         _csv_safe(row.description),
         _csv_safe(row.merchant_name),
         _csv_safe(row.category_name),
-        str(row.amount),
+        str(row.amount).replace(".", ","),
         row.currency,
         row.kind,
         _csv_safe(card),
@@ -117,8 +117,11 @@ def _row_values(row: export.ExportRow) -> tuple[str, str, str, str, str, str, st
 
 
 def _rows_to_csv_bytes(rows: list[export.ExportRow]) -> bytes:
+    # `;` y coma decimal: es el formato con el que Excel/LibreOffice en es-AR
+    # abren un CSV sin romper columnas, ya que la coma esta tomada por el
+    # separador decimal local.
     buffer = io.StringIO()
-    writer = csv.writer(buffer)
+    writer = csv.writer(buffer, delimiter=";")
     writer.writerow(_HEADERS)
     for row in rows:
         writer.writerow(_row_values(row))
