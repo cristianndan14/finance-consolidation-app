@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Inicio — Finance Consolidation{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap">
+  <h1>Hola{% if profile.display_name %}, {{ profile.display_name }}{% endif %}</h1>
+  <form method="get" action="/" style="margin-left:auto;display:flex;gap:.5rem;align-items:baseline">
+    <label style="flex-direction:row;align-items:center;gap:.4rem">
+      Mes
+      <select name="year_month" onchange="var v=this.value.split('-'); window.location='/?year='+v[0]+'&month='+v[1]">
+        {% for p in periods %}
+        <option value="{{ p.year }}-{{ p.month }}" {% if p.year == period.year and p.month == period.month %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  <div style="display:flex;gap:.5rem">
+    <a class="tag" href="/export/transactions.csv?year={{ period.year }}&month={{ period.month }}">Exportar CSV</a>
+    <a class="tag" href="/export/transactions.xlsx?year={{ period.year }}&month={{ period.month }}">Exportar XLSX</a>
+  </div>
+</div>
+<p class="sub">Resumen de {{ period }}, sobre lo confirmado.</p>
+
+{% if uncategorized > 0 %}
+<div class="flash">
+  {{ uncategorized }} transacción{{ 'es' if uncategorized != 1 else '' }} de este mes sin categorizar.
+  <a href="/documents">Revisar documentos</a>.
+</div>
+{% endif %}
+
+{% for currency in current.currencies %}
+<div class="card">
+  <h2>{{ currency }}</h2>
+  <div class="kpis">
+    <div class="kpi">
+      <div class="label">Consumo del mes</div>
+      <div class="value">{{ current.spending[currency] | ars if currency in current.spending else "0,00" }}</div>
+      {% set delta = deltas.get(currency) %}
+      {% if delta is none %}
+        <div class="delta" style="color:var(--muted)">sin dato del mes anterior</div>
+      {% else %}
+        <div class="delta {{ 'up' if delta > 0 else 'down' }}">
+          {{ '+' if delta > 0 else '' }}{{ delta | ars }} vs. mes anterior
+        </div>
+      {% endif %}
+    </div>
+    {% if currency in current.taxes %}
+    <div class="kpi">
+      <div class="label">Impuestos</div>
+      <div class="value">{{ current.taxes[currency] | ars }}</div>
+    </div>
+    {% endif %}
+    {% if currency in current.fees %}
+    <div class="kpi">
+      <div class="label">Comisiones</div>
+      <div class="value">{{ current.fees[currency] | ars }}</div>
+    </div>
+    {% endif %}
+    {% if currency in current.transfers %}
+    <div class="kpi">
+      <div class="label">Transferencias</div>
+      <div class="value">{{ current.transfers[currency] | ars }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if current.categories.get(currency) %}
+  <table>
+    <thead><tr><th>Categoría</th><th style="text-align:right">Total</th><th style="text-align:right">Tx</th></tr></thead>
+    <tbody>
+      {% for cat in current.categories.get(currency) %}
+      <tr>
+        <td>{{ cat.category_name }}</td>
+        <td style="text-align:right">{{ cat.total | ars }}</td>
+        <td style="text-align:right">{{ cat.tx_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if current.merchants %}
+<div class="card">
+  <h2>Top comerciantes</h2>
+  <table>
+    <thead><tr><th>Comercio</th><th>Moneda</th><th style="text-align:right">Total</th><th style="text-align:right">Tx</th></tr></thead>
+    <tbody>
+      {% for m in current.merchants %}
+      <tr>
+        <td>{{ m.merchant_name }}</td>
+        <td>{{ m.currency }}</td>
+        <td style="text-align:right">{{ m.total | ars }}</td>
+        <td style="text-align:right">{{ m.tx_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if current.base %}
+<div class="card">
+  <h2>En moneda base</h2>
+  <table>
+    <thead><tr><th>Moneda</th><th style="text-align:right">Total</th><th style="text-align:right">Convertido</th></tr></thead>
+    <tbody>
+      {% for b in current.base %}
+      <tr>
+        <td>{{ b.currency }}</td>
+        <td style="text-align:right">{{ b.total | ars }}</td>
+        <td style="text-align:right">
+          {% if b.missing_rate %}
+            <span style="color:var(--muted)">falta cotización — <a href="/settings">cargarla</a></span>
+          {% else %}
+            {{ b.total_base | ars }} {{ b.base_currency }}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if forward %}
+<div class="card">
+  <h2>Cuotas comprometidas</h2>
+  <p class="sub" style="margin-bottom:.75rem">
+    Lo que ya está comprometido en los próximos meses:
+    {% for currency, total in forward_by_currency.items() %}{{ total | ars }} {{ currency }}{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+  <table>
+    <thead>
+      <tr><th>Comercio</th><th>Categoría</th><th>Moneda</th><th style="text-align:right">Cuota</th><th style="text-align:right">Restan</th><th style="text-align:right">Saldo</th></tr>
+    </thead>
+    <tbody>
+      {% for f in forward %}
+      <tr>
+        <td>{{ f.merchant_name }}</td>
+        <td>{{ f.category_name }}</td>
+        <td>{{ f.currency }}</td>
+        <td style="text-align:right">{{ f.installment_amount | ars }} ({{ f.installments_paid }}/{{ f.installment_total }})</td>
+        <td style="text-align:right">{{ f.installments_left }}</td>
+        <td style="text-align:right">{{ f.remaining_amount | ars }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="charts">
+  <div id="chart-categories" class="chart-box"></div>
+  <div id="chart-trend" class="chart-box"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"
+        integrity="sha384-Mx5lkUEQPM1pOJCwFtUICyX45KNojXbkWdYhkKUKsbv391mavbfoAmONbzkgYPzR"
+        crossorigin="anonymous"></script>
+<script>
+(function () {
+  var currency = {{ (current.currencies[0] if current.currencies else "ARS") | tojson }};
+  var year = {{ period.year }};
+  var month = {{ period.month }};
+
+  var catChart = echarts.init(document.getElementById("chart-categories"));
+  catChart.setOption({ title: { text: "Categorías — " + currency, textStyle: { fontSize: 13 } } });
+  fetch("/api/dashboard/categories?year=" + year + "&month=" + month + "&currency=" + currency)
+    .then(function (r) { return r.json(); })
+    .then(function (payload) {
+      catChart.setOption({
+        tooltip: { trigger: "item" },
+        series: [{ type: "pie", radius: "65%", data: payload.data }],
+      });
+    });
+
+  var trendChart = echarts.init(document.getElementById("chart-trend"));
+  trendChart.setOption({ title: { text: "Evolución del consumo — " + currency, textStyle: { fontSize: 13 } } });
+  fetch("/api/dashboard/trend?currency=" + currency + "&months=12")
+    .then(function (r) { return r.json(); })
+    .then(function (payload) {
+      trendChart.setOption({
+        tooltip: { trigger: "axis" },
+        xAxis: { type: "category", data: payload.series.map(function (s) { return s.period; }) },
+        yAxis: { type: "value" },
+        series: [{ type: "line", data: payload.series.map(function (s) { return s.value; }) }],
+      });
+    });
+
+  window.addEventListener("resize", function () {
+    catChart.resize();
+    trendChart.resize();
+  });
+})();
+</script>
+{% endblock %}

@@ -23,6 +23,7 @@ from app.settings import get_settings
 from app.web import auth as web_auth
 from app.web import dashboard as web_dashboard
 from app.web import documents as web_documents
+from app.web import exports as web_exports
 from app.web import review as web_review
 from app.web import settings_page as web_settings
 from app.web.middleware import SessionCookieMiddleware
@@ -73,6 +74,7 @@ app.include_router(web_dashboard.router)
 app.include_router(web_settings.router)
 app.include_router(web_documents.router)
 app.include_router(web_review.router)
+app.include_router(web_exports.router)
 app.include_router(admin.router)
 
 

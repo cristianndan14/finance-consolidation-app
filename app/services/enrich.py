@@ -30,21 +30,25 @@ el automatismo.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.domain import categorization
+from app.domain import subscriptions as subscriptions_domain
 from app.infra import db
-from app.llm import prompts
-from app.llm.ports import LLMBudgetExceededError, LLMExtractor, LLMUsage
+from app.llm import fewshot, prompts
+from app.llm.ports import LLMBudgetExceededError, LLMExtractor, LLMUsage, MerchantExample
 from app.logging_config import get_logger
 from app.repositories import categories as categories_repo
 from app.repositories import llm_usage as usage_repo
 from app.repositories import merchants as merchants_repo
 from app.repositories import statements as statements_repo
+from app.repositories import subscriptions as subscriptions_repo
+from app.repositories import transaction_revisions as revisions_repo
 from app.repositories import transactions as transactions_repo
 from app.settings import Settings
 
@@ -71,6 +75,7 @@ class EnrichOutcome:
     by_rule: int = 0
     by_llm: int = 0
     unresolved: int = 0
+    subscriptions: int = 0
     usage: LLMUsage = field(default_factory=LLMUsage)
 
     @property
@@ -92,6 +97,7 @@ class EnrichOutcome:
             "by_rule": self.by_rule,
             "by_llm": self.by_llm,
             "unresolved": self.unresolved,
+            "subscriptions": self.subscriptions,
             "cache_hit_ratio": round(self.cache_hit_ratio, 3),
             "cost_usd": str(self.usage.cost_usd),
         }
@@ -139,6 +145,7 @@ async def enrich_statement(
     # ─── 2: la memoria de alias ─────────────────────────────────────────────
     async with db.system_tx(user_id) as conn:
         hits = await merchants_repo.lookup_aliases(conn, list(unknown_keys))
+        corrections = await revisions_repo.merchant_corrections(conn)
 
     still_unknown = [key for key in unknown_keys if key not in hits]
 
@@ -151,6 +158,9 @@ async def enrich_statement(
             keys=still_unknown,
             category_slugs=sorted(by_slug),
             prompt_version=prompt_version,
+            examples=fewshot.build(
+                corrections, category_slugs=sorted(by_slug), exclude_keys=still_unknown
+            ),
         )
 
     # ─── Persistencia ───────────────────────────────────────────────────────
@@ -182,6 +192,12 @@ async def enrich_statement(
             _count(outcome, decision.source)
 
         await merchants_repo.touch_aliases(conn, [key for key in unknown_keys if key in hits])
+
+        # Despues de resolver el comercio, no antes: la deteccion agrupa por
+        # `merchant_id`, y las transacciones de este resumen recien lo tienen
+        # ahora. Corriendola antes se perderia siempre el mes mas reciente, que es
+        # justo el que decide si la serie sigue viva.
+        outcome.subscriptions = await _detect_subscriptions(conn, merchant_ids=_touched(hits))
 
         if outcome.usage.cost_usd:
             now = datetime.now(UTC)
@@ -223,6 +239,7 @@ async def _ask_model(
     keys: list[str],
     category_slugs: list[str],
     prompt_version: str,
+    examples: Sequence[MerchantExample] = (),
 ) -> tuple[dict[str, _Mapping], LLMUsage]:
     """Un batch por tanda. Devuelve lo que el modelo pudo mapear.
 
@@ -236,7 +253,10 @@ async def _ask_model(
     for start in range(0, len(keys), MAX_KEYS_PER_CALL):
         batch = keys[start : start + MAX_KEYS_PER_CALL]
         result = await extractor.normalize_merchants(
-            raw_keys=batch, category_slugs=category_slugs, prompt_version=prompt_version
+            raw_keys=batch,
+            category_slugs=category_slugs,
+            prompt_version=prompt_version,
+            examples=examples,
         )
         usage = usage + result.usage
 
@@ -280,6 +300,40 @@ async def _persist_new_merchants(
         )
 
 
+def _touched(hits: dict[str, merchants_repo.AliasHit]) -> dict[str, str]:
+    """Los comercios que aparecieron en este resumen: `merchant_id -> nombre`."""
+    return {hit.merchant_id: hit.canonical_name for hit in hits.values()}
+
+
+async def _detect_subscriptions(conn: AsyncConnection, *, merchant_ids: dict[str, str]) -> int:
+    """Marca como suscripcion lo que se repite mes a mes. Devuelve cuantas encontro.
+
+    Solo se miran los comercios que aparecieron en este resumen: recorrer todos
+    los del usuario daria el mismo resultado —una serie que no crecio no cambia de
+    veredicto— a un costo que crece con el historial.
+    """
+    if not merchant_ids:
+        return 0
+
+    since = datetime.now(UTC).date() - timedelta(days=30 * subscriptions_repo.HISTORY_MONTHS)
+    history = await subscriptions_repo.history(conn, list(merchant_ids), since=since)
+
+    candidates = subscriptions_domain.detect_all(
+        (merchant_id, merchant_ids[merchant_id], occurrences)
+        for merchant_id, occurrences in history.items()
+    )
+
+    for candidate in candidates:
+        subscription_id = await subscriptions_repo.save_detected(conn, candidate)
+        await subscriptions_repo.link_transactions(
+            conn,
+            subscription_id=subscription_id,
+            transaction_ids=candidate.transaction_ids,
+        )
+
+    return len(candidates)
+
+
 def _count(outcome: EnrichOutcome, source: str) -> None:
     if source == "kind":
         outcome.by_kind += 1
@@ -313,6 +367,7 @@ async def recategorize(
         raise EnrichError("esa transaccion no existe", reason="not_found")
 
     await transactions_repo.set_category(conn, transaction_id, category_id)
+    await _record_category_change(conn, current, category_id)
 
     if not remember or current.merchant_id is None:
         return
@@ -323,4 +378,35 @@ async def recategorize(
         merchant_id=current.merchant_id,
         source="user",
         confidence=1.0,
+    )
+
+
+async def _record_category_change(
+    conn: AsyncConnection, current: transactions_repo.Transaction, category_id: str
+) -> None:
+    """Deja la correccion en la bitacora, con el slug y no con el UUID.
+
+    El slug es lo que sirve en los dos lugares donde esta fila se lee: la pantalla
+    que responde "¿esto lo cambie yo?" —donde un UUID no dice nada— y el few-shot
+    del enriquecimiento, que necesita exactamente el vocabulario que el modelo
+    tiene que devolver.
+    """
+    if current.category_id == category_id:
+        return
+
+    old = await categories_repo.get(conn, current.category_id) if current.category_id else None
+    # `set_category` (arriba) ya inserto `category_id`: si no existiera, la FK de
+    # `transactions.category_id` habria fallado antes de llegar aca.
+    new = await categories_repo.get(conn, category_id)
+    if new is None:
+        raise RuntimeError("category_id valido por la FK de transactions.category_id")
+
+    await revisions_repo.record(
+        conn,
+        transaction_id=current.id,
+        changes=[
+            revisions_repo.FieldChange(
+                field="category_slug", old=old.slug if old else None, new=new.slug
+            )
+        ],
     )

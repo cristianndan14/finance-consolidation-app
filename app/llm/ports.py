@@ -24,6 +24,7 @@ distincion no es decorativa:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -113,6 +114,20 @@ class HeaderHints:
     uploaded_on: date | None = None
 
 
+@dataclass(frozen=True)
+class MerchantExample:
+    """Una correccion que el usuario ya hizo, para que el modelo no la repita.
+
+    Es un ejemplo few-shot completo: la clave cruda, el comercio que resulto ser
+    y la categoria que le corresponde. Los tres campos son obligatorios porque un
+    ejemplo a medias le enseña al modelo un formato que no queremos que copie.
+    """
+
+    raw_key: str
+    canonical_name: str
+    category_slug: str
+
+
 class LLMExtractor(Protocol):
     """Las llamadas que la etapa 2 necesita.
 
@@ -152,6 +167,7 @@ class LLMExtractor(Protocol):
         raw_keys: list[str],
         category_slugs: list[str],
         prompt_version: str,
+        examples: Sequence[MerchantExample] = (),
     ) -> LLMResult[MerchantsPayload]:
         """Descripciones crudas -> comercio y categoria, en un solo batch.
 
@@ -159,6 +175,10 @@ class LLMExtractor(Protocol):
         informacion de monto o fecha: lo unico que se le pide decidir es que
         comercio es. Menos contexto es mas barato y, sobre todo, deja menos
         lugar a que invente correlaciones que no existen.
+
+        `examples` son correcciones que este usuario ya hizo a mano. Van vacias
+        por default para que las versiones de prompt que no las usan sigan
+        funcionando sin cambios en el llamador.
         """
         ...
 

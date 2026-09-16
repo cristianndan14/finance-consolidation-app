@@ -137,7 +137,7 @@ def _pick(
     No se cae al mes actual del calendario: si todavía no subiste el resumen de
     este mes, mostrar un dashboard en cero sería un dato falso sobre tu consumo.
     """
-    if year and month:
+    if year and month and 1 <= month <= 12:
         return analytics.Period(year=year, month=month)
     if periods:
         return periods[0]

@@ -29,6 +29,7 @@ select
 """
 
 _ACTIVE = text(_SELECT + " where is_active order by sort_order, name")
+_BY_ID = text(_SELECT + " where id = :id")
 _BY_SLUG = text(_SELECT + " where slug = any(cast(:slugs as text[])) and is_active")
 
 
@@ -61,6 +62,11 @@ class Category:
 async def list_active(conn: AsyncConnection) -> list[Category]:
     rows = (await conn.execute(_ACTIVE)).mappings()
     return [Category(**row) for row in rows]
+
+
+async def get(conn: AsyncConnection, category_id: str) -> Category | None:
+    row = (await conn.execute(_BY_ID, {"id": category_id})).mappings().one_or_none()
+    return Category(**row) if row else None
 
 
 async def by_slug(conn: AsyncConnection, slugs: list[str]) -> dict[str, Category]:

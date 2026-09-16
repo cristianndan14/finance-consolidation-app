@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Configuración — Finance Consolidation{% endblock %}
+{% block content %}
+<h1>Configuración</h1>
+<p class="sub">
+  Tipo de cambio por mes, para consolidar lo que gastaste en distintas monedas en
+  {{ profile.base_currency }}.
+</p>
+
+<div class="card">
+  <h2>Cargar cotización</h2>
+  <form method="post" action="/settings/fx" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+      <label style="flex:1 1 8rem">Año
+        <input type="text" name="period_year" value="{{ default_year }}" required>
+      </label>
+      <label style="flex:1 1 6rem">Mes
+        <input type="text" name="period_month" value="{{ default_month }}" required>
+      </label>
+    </div>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+      <label style="flex:1 1 6rem">De
+        <input type="text" name="base_currency" value="USD" required>
+      </label>
+      <label style="flex:1 1 6rem">A
+        <input type="text" name="quote_currency" value="ARS" required>
+      </label>
+      <label style="flex:2 1 10rem">Cotización
+        <input type="text" name="rate" placeholder="1.234,56" required>
+      </label>
+    </div>
+    <button type="submit" style="justify-self:start">Guardar</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Cotizaciones cargadas</h2>
+  {% if rates %}
+  <table>
+    <thead>
+      <tr><th>Mes</th><th>Par</th><th style="text-align:right">Cotización</th><th>Origen</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for rate in rates %}
+      <tr>
+        <td>{{ '%02d'|format(rate.period_month) }}/{{ rate.period_year }}</td>
+        <td>{{ rate.base_currency }} → {{ rate.quote_currency }}</td>
+        <td style="text-align:right">{{ rate.rate | ars }}</td>
+        <td>
+          {% if rate.is_global %}<span class="tag">global</span>{% else %}<span class="tag">{{ rate.source }}</span>{% endif %}
+        </td>
+        <td>
+          {% if not rate.is_global %}
+          <form method="post" action="/settings/fx/{{ rate.id }}/delete" style="margin:0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="quiet" type="submit">Borrar</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="sub" style="margin-bottom:0">Todavía no cargaste ninguna cotización.</p>
+  {% endif %}
+</div>
+{% endblock %}

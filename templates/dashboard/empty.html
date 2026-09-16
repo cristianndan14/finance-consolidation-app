@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Inicio — Finance Consolidation{% endblock %}
+{% block content %}
+<h1>Hola{% if profile.display_name %}, {{ profile.display_name }}{% endif %}</h1>
+<p class="sub">Todavía no hay ningún resumen confirmado para mostrar en el dashboard.</p>
+
+<div class="card">
+  <p>
+    El dashboard solo muestra resúmenes <strong>confirmados</strong> — un borrador puede tener
+    transacciones que el modelo leyó mal y que todavía nadie revisó.
+  </p>
+  <p style="margin-bottom:0">
+    <a href="/documents">Subí un resumen</a> y, después de revisarlo, confirmalo para que
+    aparezca acá.
+  </p>
+</div>
+{% endblock %}

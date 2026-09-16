@@ -46,11 +46,16 @@ PARSE_TRANSACTIONS_V2: Final = "parse_transactions_v2"
 
 ENRICH_MERCHANTS_V1: Final = "enrich_merchants_v1"
 
+# v2: agrega los ejemplos few-shot con las correcciones del propio usuario. La v1
+# queda porque los alias que creo siguen apuntando a ella y porque `{examples}`
+# es un hueco que la v1 no tiene: renderizarla con la v2 fallaria.
+ENRICH_MERCHANTS_V2: Final = "enrich_merchants_v2"
+
 # Lo que se usa hoy.
 PARSE_HEADER: Final = PARSE_HEADER_V2
 PARSE_TRANSACTIONS: Final = PARSE_TRANSACTIONS_V2
 REPAIR_TRANSACTIONS: Final = REPAIR_TRANSACTIONS_V1
-ENRICH_MERCHANTS: Final = ENRICH_MERCHANTS_V1
+ENRICH_MERCHANTS: Final = ENRICH_MERCHANTS_V2
 
 
 class PromptNotFoundError(LookupError):

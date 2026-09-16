@@ -67,6 +67,34 @@ _FOR_STATEMENT = text(
 )
 
 
+# Las correcciones de categoria, con el comercio al que terminaron apuntando.
+# Son la materia prima del few-shot del enriquecimiento (`app/llm/fewshot.py`).
+#
+# El join con `merchants` es interno y no externo a proposito: un ejemplo sin
+# nombre de comercio solo puede enseñar media respuesta, y media respuesta en un
+# prompt le enseña al modelo a contestar a medias.
+_MERCHANT_CORRECTIONS = text(
+    """
+    select latest.description_raw, latest.canonical_name, latest.category_slug
+      from (
+        select distinct on (t.description_raw)
+               t.description_raw,
+               m.canonical_name,
+               r.new_value #>> '{}' as category_slug,
+               r.changed_at
+          from app.transaction_revisions r
+          join app.transactions t on t.id = r.transaction_id
+          join app.merchants m on m.id = t.merchant_id
+         where r.field = 'category_slug'
+           and r.new_value #>> '{}' is not null
+         order by t.description_raw, r.changed_at desc
+      ) latest
+     order by latest.changed_at desc
+     limit :limit
+    """
+)
+
+
 @dataclass(frozen=True)
 class Revision:
     id: str
@@ -106,6 +134,19 @@ async def record(
 async def for_transaction(conn: AsyncConnection, transaction_id: str) -> list[Revision]:
     rows = (await conn.execute(_FOR_TRANSACTION, {"transaction_id": transaction_id})).mappings()
     return [Revision(**row) for row in rows]
+
+
+async def merchant_corrections(
+    conn: AsyncConnection, *, limit: int = 20
+) -> list[tuple[str, str, str]]:
+    """Las ultimas correcciones de categoria, como `(descripcion, comercio, slug)`.
+
+    Se traen mas de las que entran en el prompt: `fewshot.build` descarta las que
+    apuntan a una categoria que ya no existe y las que son de la tanda que se esta
+    preguntando, y quedarse corto ahi seria mandar un prompt con dos ejemplos.
+    """
+    rows = (await conn.execute(_MERCHANT_CORRECTIONS, {"limit": limit})).mappings()
+    return [(row["description_raw"], row["canonical_name"], row["category_slug"]) for row in rows]
 
 
 async def for_statement(

@@ -28,9 +28,10 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Sequence
 from typing import Any, Final
 
-from app.llm import cost, prompts, response_schemas
+from app.llm import cost, fewshot, prompts, response_schemas
 from app.llm.ports import (
     HeaderHints,
     LLMConfigError,
@@ -38,6 +39,7 @@ from app.llm.ports import (
     LLMResult,
     LLMTransientError,
     LLMUsage,
+    MerchantExample,
 )
 from app.logging_config import get_logger
 from app.schemas.llm import MerchantsPayload, StatementHeaderPayload, TransactionsPayload
@@ -143,11 +145,15 @@ class GeminiExtractor:
         raw_keys: list[str],
         category_slugs: list[str],
         prompt_version: str = prompts.ENRICH_MERCHANTS,
+        examples: Sequence[MerchantExample] = (),
     ) -> LLMResult[MerchantsPayload]:
+        # `examples` se pasa siempre: las versiones que no tienen el hueco lo
+        # ignoran (`str.format` descarta lo que le sobra).
         prompt = prompts.render(
             prompt_version,
             keys="\n".join(f"- {key}" for key in raw_keys),
             categories="\n".join(f"- {slug}" for slug in category_slugs),
+            examples=fewshot.render(examples),
         )
         # Aca si se deja pensar: decidir que "MERPAGO*MAMACHARESTO" es un
         # restaurante es una inferencia, no una transcripcion. Es la diferencia
