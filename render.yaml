@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: finance-consolidation
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon               # mas cerca de la DB Supabase (us-west-2)
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      # URL publica del servicio (la asigna Render al crear el servicio,
+      # p.ej. https://finance-consolidation.onrender.com). Se usa para el link
+      # de redirect_to en las invitaciones (app/infra/supabase_admin.py).
+      - key: BASE_URL
+        sync: false
+      # Secretos: se cargan a mano en Render -> Environment (nunca en este archivo).
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
