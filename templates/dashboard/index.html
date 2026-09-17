@@ -4,9 +4,10 @@
 <div style="display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap">
   <h1>Hola{% if profile.display_name %}, {{ profile.display_name }}{% endif %}</h1>
   <form method="get" action="/" style="margin-left:auto;display:flex;gap:.5rem;align-items:baseline">
+    <input type="hidden" name="mode" value="{{ mode }}">
     <label style="flex-direction:row;align-items:center;gap:.4rem">
       Mes
-      <select name="year_month" onchange="var v=this.value.split('-'); window.location='/?year='+v[0]+'&month='+v[1]">
+      <select name="year_month" onchange="var v=this.value.split('-'); window.location='/?year='+v[0]+'&month='+v[1]+'&mode={{ mode }}'">
         {% for p in periods %}
         <option value="{{ p.year }}-{{ p.month }}" {% if p.year == period.year and p.month == period.month %}selected{% endif %}>{{ p }}</option>
         {% endfor %}
@@ -18,7 +19,17 @@
     <a class="tag" href="/export/transactions.xlsx?year={{ period.year }}&month={{ period.month }}">Exportar XLSX</a>
   </div>
 </div>
-<p class="sub">Resumen de {{ period }}, sobre lo confirmado.</p>
+<p class="sub">
+  Resumen de {{ period }}, sobre lo confirmado —
+  <a href="/?year={{ period.year }}&month={{ period.month }}&mode=cashflow"{% if mode == 'cashflow' %} style="font-weight:600;color:var(--fg)"{% endif %}>flujo de caja</a>
+  ·
+  <a href="/?year={{ period.year }}&month={{ period.month }}&mode=accrual"{% if mode == 'accrual' %} style="font-weight:600;color:var(--fg)"{% endif %}>devengado</a>
+  {% if mode == 'accrual' %}
+    <span style="color:var(--muted)"> — contando el mes de la compra real, no el mes del resumen</span>
+  {% else %}
+    <span style="color:var(--muted)"> — contando el mes en que la cuota cae en el resumen</span>
+  {% endif %}
+</p>
 
 {% if uncategorized > 0 %}
 <div class="flash">
@@ -43,6 +54,12 @@
         </div>
       {% endif %}
     </div>
+    {% if currency in current.income %}
+    <div class="kpi">
+      <div class="label">Ingresos</div>
+      <div class="value">{{ current.income[currency] | ars }}</div>
+    </div>
+    {% endif %}
     {% if currency in current.taxes %}
     <div class="kpi">
       <div class="label">Impuestos</div>
@@ -166,10 +183,11 @@
   var currency = {{ (current.currencies[0] if current.currencies else "ARS") | tojson }};
   var year = {{ period.year }};
   var month = {{ period.month }};
+  var mode = {{ mode | tojson }};
 
   var catChart = echarts.init(document.getElementById("chart-categories"));
   catChart.setOption({ title: { text: "Categorías — " + currency, textStyle: { fontSize: 13 } } });
-  fetch("/api/dashboard/categories?year=" + year + "&month=" + month + "&currency=" + currency)
+  fetch("/api/dashboard/categories?year=" + year + "&month=" + month + "&currency=" + currency + "&mode=" + mode)
     .then(function (r) { return r.json(); })
     .then(function (payload) {
       catChart.setOption({
@@ -180,7 +198,7 @@
 
   var trendChart = echarts.init(document.getElementById("chart-trend"));
   trendChart.setOption({ title: { text: "Evolución del consumo — " + currency, textStyle: { fontSize: 13 } } });
-  fetch("/api/dashboard/trend?currency=" + currency + "&months=12")
+  fetch("/api/dashboard/trend?currency=" + currency + "&months=12&mode=" + mode)
     .then(function (r) { return r.json(); })
     .then(function (payload) {
       trendChart.setOption({

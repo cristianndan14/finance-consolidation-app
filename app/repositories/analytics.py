@@ -27,80 +27,107 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Final, Literal
 
-from sqlalchemy import text
+from sqlalchemy import TextClause, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 # Los `kind` de categoria que cuentan como consumo de la persona.
 SPENDING_KINDS = ("expense",)
 
-_MONTHS = text(
-    """
-    select distinct period_year, period_month
-      from app.v_monthly_cashflow
-     order by period_year desc, period_month desc
-     limit :limit
-    """
-)
+# 'cashflow': el mes en que la cuota cae en el resumen (el default: cuanto
+# efectivamente salio de la cuenta este mes). 'accrual': el mes de la compra
+# real, con la cuota completa contada en el primer mes.
+Mode = Literal["cashflow", "accrual"]
 
-_MONTH_TOTALS = text(
-    """
-    select currency,
-           category_kind,
-           sum(total)     as total,
-           sum(tx_count)  as tx_count
-      from app.v_monthly_cashflow
-     where period_year = :year and period_month = :month
-     group by currency, category_kind
-     order by currency, category_kind
-    """
-)
+_MONTHLY_VIEW: Final = {"cashflow": "app.v_monthly_cashflow", "accrual": "app.v_monthly_accrual"}
+_BASE_VIEW: Final = {"cashflow": "app.v_monthly_base", "accrual": "app.v_monthly_base_accrual"}
+_ROW_VIEW: Final = {"cashflow": "app.v_tx_enriched", "accrual": "app.v_accrual_enriched"}
 
-_BY_CATEGORY = text(
-    """
-    select currency,
-           category_slug,
-           category_name,
-           category_kind,
-           sum(total)    as total,
-           sum(tx_count) as tx_count
-      from app.v_monthly_cashflow
-     where period_year = :year and period_month = :month
-       and category_kind = any(cast(:kinds as text[]))
-     group by currency, category_slug, category_name, category_kind
-     having sum(total) <> 0
-     order by sum(total) desc
-    """
-)
 
-_BY_MERCHANT = text(
-    """
-    select currency, merchant_name, sum(signed_amount) as total, count(*) as tx_count
-      from app.v_tx_enriched
-     where period_year = :year and period_month = :month
-       and statement_status = 'confirmed'
-       and review_status <> 'rejected'
-       and category_kind = any(cast(:kinds as text[]))
-     group by currency, merchant_name
-     having sum(signed_amount) <> 0
-     order by sum(signed_amount) desc
-     limit :limit
-    """
-)
+def _months_query(mode: Mode) -> TextClause:
+    return text(
+        f"""
+        select distinct period_year, period_month
+          from {_MONTHLY_VIEW[mode]}
+         order by period_year desc, period_month desc
+         limit :limit
+        """  # noqa: S608 - mode viene de un Literal cerrado, no de input del usuario
+    )
 
-_IN_BASE = text(
-    """
-    select currency,
-           sum(total)      as total,
-           sum(total_base) as total_base,
-           max(base_currency) as base_currency,
-           bool_or(total_base is null) as missing_rate
-      from app.v_monthly_base
-     where period_year = :year and period_month = :month
-       and category_kind = any(cast(:kinds as text[]))
-     group by currency
-    """
-)
+
+def _month_totals_query(mode: Mode) -> TextClause:
+    return text(
+        f"""
+        select currency,
+               category_kind,
+               sum(total)     as total,
+               sum(tx_count)  as tx_count
+          from {_MONTHLY_VIEW[mode]}
+         where period_year = :year and period_month = :month
+         group by currency, category_kind
+         order by currency, category_kind
+        """  # noqa: S608
+    )
+
+
+def _by_category_query(mode: Mode) -> TextClause:
+    return text(
+        f"""
+        select currency,
+               category_slug,
+               category_name,
+               category_kind,
+               sum(total)    as total,
+               sum(tx_count) as tx_count
+          from {_MONTHLY_VIEW[mode]}
+         where period_year = :year and period_month = :month
+           and category_kind = any(cast(:kinds as text[]))
+         group by currency, category_slug, category_name, category_kind
+         having sum(total) <> 0
+         order by sum(total) desc
+        """  # noqa: S608
+    )
+
+
+def _by_merchant_query(mode: Mode) -> TextClause:
+    # v_tx_enriched trae `signed_amount` y filtra por statement_status/review_status
+    # explicitamente; v_accrual_enriched ya viene pre-filtrada (ver la migracion).
+    extra_filter = (
+        "and statement_status = 'confirmed' and review_status <> 'rejected'"
+        if mode == "cashflow"
+        else ""
+    )
+    return text(
+        f"""
+        select currency, merchant_name, sum(signed_amount) as total, count(*) as tx_count
+          from {_ROW_VIEW[mode]}
+         where period_year = :year and period_month = :month
+           {extra_filter}
+           and category_kind = any(cast(:kinds as text[]))
+         group by currency, merchant_name
+         having sum(signed_amount) <> 0
+         order by sum(signed_amount) desc
+         limit :limit
+        """  # noqa: S608
+    )
+
+
+def _in_base_query(mode: Mode) -> TextClause:
+    return text(
+        f"""
+        select currency,
+               sum(total)      as total,
+               sum(total_base) as total_base,
+               max(base_currency) as base_currency,
+               bool_or(total_base is null) as missing_rate
+          from {_BASE_VIEW[mode]}
+         where period_year = :year and period_month = :month
+           and category_kind = any(cast(:kinds as text[]))
+         group by currency
+        """  # noqa: S608
+    )
+
 
 _FORWARD = text(
     """
@@ -187,15 +214,19 @@ class ForwardInstallment:
     last_posted_date: date
 
 
-async def available_periods(conn: AsyncConnection, *, limit: int = 36) -> list[Period]:
+async def available_periods(
+    conn: AsyncConnection, *, limit: int = 36, mode: Mode = "cashflow"
+) -> list[Period]:
     """Los meses que tienen datos confirmados, del mas nuevo al mas viejo."""
-    rows = (await conn.execute(_MONTHS, {"limit": limit})).mappings()
+    rows = (await conn.execute(_months_query(mode), {"limit": limit})).mappings()
     return [Period(year=row["period_year"], month=row["period_month"]) for row in rows]
 
 
-async def totals_by_kind(conn: AsyncConnection, period: Period) -> list[KindTotal]:
+async def totals_by_kind(
+    conn: AsyncConnection, period: Period, *, mode: Mode = "cashflow"
+) -> list[KindTotal]:
     rows = (
-        await conn.execute(_MONTH_TOTALS, {"year": period.year, "month": period.month})
+        await conn.execute(_month_totals_query(mode), {"year": period.year, "month": period.month})
     ).mappings()
     return [
         KindTotal(
@@ -209,11 +240,16 @@ async def totals_by_kind(conn: AsyncConnection, period: Period) -> list[KindTota
 
 
 async def by_category(
-    conn: AsyncConnection, period: Period, *, kinds: tuple[str, ...] = SPENDING_KINDS
+    conn: AsyncConnection,
+    period: Period,
+    *,
+    kinds: tuple[str, ...] = SPENDING_KINDS,
+    mode: Mode = "cashflow",
 ) -> list[CategoryTotal]:
     rows = (
         await conn.execute(
-            _BY_CATEGORY, {"year": period.year, "month": period.month, "kinds": list(kinds)}
+            _by_category_query(mode),
+            {"year": period.year, "month": period.month, "kinds": list(kinds)},
         )
     ).mappings()
     return [
@@ -235,10 +271,11 @@ async def by_merchant(
     *,
     limit: int = 10,
     kinds: tuple[str, ...] = SPENDING_KINDS,
+    mode: Mode = "cashflow",
 ) -> list[MerchantTotal]:
     rows = (
         await conn.execute(
-            _BY_MERCHANT,
+            _by_merchant_query(mode),
             {"year": period.year, "month": period.month, "limit": limit, "kinds": list(kinds)},
         )
     ).mappings()
@@ -254,7 +291,11 @@ async def by_merchant(
 
 
 async def in_base_currency(
-    conn: AsyncConnection, period: Period, *, kinds: tuple[str, ...] = SPENDING_KINDS
+    conn: AsyncConnection,
+    period: Period,
+    *,
+    kinds: tuple[str, ...] = SPENDING_KINDS,
+    mode: Mode = "cashflow",
 ) -> list[BaseTotal]:
     """Totales por moneda y su conversion. `missing_rate` es lo que la UI avisa.
 
@@ -265,7 +306,7 @@ async def in_base_currency(
     """
     rows = (
         await conn.execute(
-            _IN_BASE, {"year": period.year, "month": period.month, "kinds": list(kinds)}
+            _in_base_query(mode), {"year": period.year, "month": period.month, "kinds": list(kinds)}
         )
     ).mappings()
     return [
