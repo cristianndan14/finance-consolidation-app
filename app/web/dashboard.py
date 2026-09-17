@@ -43,6 +43,10 @@ router = APIRouter(tags=["dashboard"])
 TOP_CATEGORIES = 8
 
 
+def _mode(raw: str | None) -> analytics.Mode:
+    return "accrual" if raw == "accrual" else "cashflow"
+
+
 @router.get("/", include_in_schema=False)
 async def dashboard(
     request: Request,
@@ -51,9 +55,12 @@ async def dashboard(
     settings: SettingsDep,
     year: int | None = None,
     month: int | None = None,
+    mode: str | None = None,
 ) -> Response:
+    view_mode = _mode(mode)
+
     async with db.user_tx(user.db_claims) as conn:
-        periods = await analytics.available_periods(conn)
+        periods = await analytics.available_periods(conn, mode=view_mode)
         period = _pick(periods, year, month)
 
         if period is None:
@@ -63,8 +70,8 @@ async def dashboard(
                 {"profile": profile, "csrf_token": csrf.issue(user.user_id, settings)},
             )
 
-        current = await _snapshot(conn, period)
-        previous = await _snapshot(conn, period.previous())
+        current = await _snapshot(conn, period, mode=view_mode)
+        previous = await _snapshot(conn, period.previous(), mode=view_mode)
         forward = await analytics.forward_installments(conn)
         pending = await analytics.uncategorized_count(conn, period)
 
@@ -75,6 +82,7 @@ async def dashboard(
             "profile": profile,
             "period": period,
             "periods": periods,
+            "mode": view_mode,
             "current": current,
             "previous": previous,
             "deltas": _deltas(current, previous),
@@ -88,13 +96,13 @@ async def dashboard(
 
 @router.get("/api/dashboard/categories", include_in_schema=False)
 async def categories_json(
-    user: CurrentUserDep, year: int, month: int, currency: str = "ARS"
+    user: CurrentUserDep, year: int, month: int, currency: str = "ARS", mode: str | None = None
 ) -> Response:
     """Los datos del gráfico de categorías. Los dibuja ECharts en el browser."""
     period = analytics.Period(year=year, month=month)
 
     async with db.user_tx(user.db_claims) as conn:
-        rows = await analytics.by_category(conn, period)
+        rows = await analytics.by_category(conn, period, mode=_mode(mode))
 
     data = [
         {"name": row.category_name, "value": float(abs(row.total))}
@@ -105,14 +113,18 @@ async def categories_json(
 
 
 @router.get("/api/dashboard/trend", include_in_schema=False)
-async def trend_json(user: CurrentUserDep, currency: str = "ARS", months: int = 12) -> Response:
+async def trend_json(
+    user: CurrentUserDep, currency: str = "ARS", months: int = 12, mode: str | None = None
+) -> Response:
     """Consumo mes a mes, para el gráfico de evolución."""
+    view_mode = _mode(mode)
+
     async with db.user_tx(user.db_claims) as conn:
-        periods = await analytics.available_periods(conn, limit=months)
+        periods = await analytics.available_periods(conn, limit=months, mode=view_mode)
         series = []
         # Del más viejo al más nuevo: un gráfico de evolución se lee así.
         for period in reversed(periods):
-            totals = await analytics.totals_by_kind(conn, period)
+            totals = await analytics.totals_by_kind(conn, period, mode=view_mode)
             spending = sum(
                 (
                     t.total
@@ -144,20 +156,28 @@ def _pick(
     return None
 
 
-async def _snapshot(conn: Any, period: analytics.Period) -> dict[str, Any]:
+async def _snapshot(
+    conn: Any, period: analytics.Period, *, mode: analytics.Mode = "cashflow"
+) -> dict[str, Any]:
     """Todo lo que se muestra de un mes."""
-    kinds = await analytics.totals_by_kind(conn, period)
-    categories = await analytics.by_category(conn, period)
-    merchants = await analytics.by_merchant(conn, period)
-    base = await analytics.in_base_currency(conn, period)
+    kinds = await analytics.totals_by_kind(conn, period, mode=mode)
+    # 'income' cuenta ingresos manuales y devoluciones grandes: se pide aparte
+    # porque by_category/by_merchant/in_base_currency por default solo miran
+    # SPENDING_KINDS ('expense').
+    categories = await analytics.by_category(conn, period, mode=mode)
+    income_categories = await analytics.by_category(conn, period, kinds=("income",), mode=mode)
+    merchants = await analytics.by_merchant(conn, period, mode=mode)
+    base = await analytics.in_base_currency(conn, period, mode=mode)
 
     return {
         "period": period,
         "spending": _by_currency(kinds, "expense"),
+        "income": _by_currency(kinds, "income"),
         "taxes": _by_currency(kinds, "tax"),
         "fees": _by_currency(kinds, "fee"),
         "transfers": _by_currency(kinds, "transfer"),
         "categories": _top(categories),
+        "income_categories": _top(income_categories),
         "merchants": merchants,
         "base": base,
         "currencies": sorted({k.currency for k in kinds}),

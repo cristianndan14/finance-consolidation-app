@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Movimientos — Finance Consolidation{% endblock %}
+{% block content %}
+<h1>Movimientos</h1>
+<p class="sub">
+  Ingresos y gastos por fuera de los resúmenes de tarjeta: efectivo, transferencias, sueldo.
+</p>
+
+<div class="card">
+  <h2>Cargar movimiento</h2>
+  <form method="post" action="/movements" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+      <label style="flex:1 1 8rem">Fecha
+        <input type="date" name="entry_date" value="{{ default_date }}" required>
+      </label>
+      <label style="flex:1 1 8rem">Tipo
+        <select name="kind" required>
+          <option value="expense">Gasto</option>
+          <option value="income">Ingreso</option>
+        </select>
+      </label>
+    </div>
+    <label>Descripción
+      <input type="text" name="description" placeholder="Sueldo, alquiler, efectivo..." required>
+    </label>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+      <label style="flex:2 1 10rem">Monto
+        <input type="text" name="amount" placeholder="1.234,56" required>
+      </label>
+      <label style="flex:1 1 6rem">Moneda
+        <input type="text" name="currency" value="ARS" required>
+      </label>
+      <label style="flex:2 1 10rem">Categoría (opcional)
+        <select name="category_id">
+          <option value="">Sin categoría</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}">{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label>Notas (opcional)
+      <input type="text" name="notes">
+    </label>
+    <button type="submit" style="justify-self:start">Guardar</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Últimos movimientos</h2>
+  {% if entries %}
+  <table>
+    <thead>
+      <tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Categoría</th><th style="text-align:right">Monto</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      <tr>
+        <td>{{ entry.entry_date }}</td>
+        <td><span class="tag">{{ 'Ingreso' if entry.is_income else 'Gasto' }}</span></td>
+        <td>{{ entry.description }}</td>
+        <td>{{ entry.category_name or '—' }}</td>
+        <td style="text-align:right">{{ entry.amount | ars }} {{ entry.currency }}</td>
+        <td>
+          <form method="post" action="/movements/{{ entry.id }}/delete" style="margin:0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="quiet" type="submit">Borrar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="sub" style="margin-bottom:0">Todavía no cargaste ningún movimiento.</p>
+  {% endif %}
+</div>
+{% endblock %}
