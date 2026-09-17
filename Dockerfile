@@ -20,14 +20,14 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 COPY app ./app
 COPY templates ./templates
-COPY static ./static
+COPY README.md ./README.md
 RUN uv sync --frozen --no-dev
 
 # ─── runtime ─────────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libqpdf29 \
+        libqpdf30 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 appuser
 

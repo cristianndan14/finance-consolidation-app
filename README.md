@@ -251,8 +251,16 @@ solo habilita invitar — **no** da acceso a los datos de nadie, porque eso lo d
 Para los tests se usan textos anonimizados (`make anonymize`) y PDFs sintéticos generados con
 reportlab. `.gitignore` bloquea cualquier `.pdf` fuera de `tests/fixtures/pdfs/`.
 
+## Deploy
+
+Corre en **Render** (free tier), como Web Service Docker apuntando a este repo — usa el mismo
+`Dockerfile` sin cambios. La configuración del servicio está versionada en `render.yaml`; los
+secretos (`DATABASE_URL`, `SUPABASE_*`, `SESSION_SECRET`, `GEMINI_API_KEY`, `BASE_URL`) se cargan
+a mano en Render → Environment, nunca en el repo. Detalle completo de la migración desde Fly.io,
+incluyendo el trade-off del sleep de 15 min sin tráfico, en `docs/migracion-fly-a-render.md`.
+
 ## Costos
 
-Del orden de **USD 3–6/mes**: Fly.io con una máquina siempre encendida (USD 3–5), Supabase
-Free (el volumen cabe años; el riesgo es la pausa por inactividad, no el espacio) y Gemini
-2.5 Flash en centavos al volumen de ~20 documentos por mes.
+**USD 0/mes**: Render free tier (750h/mes, duerme a los 15 min sin tráfico), Supabase Free (el
+volumen cabe años; el riesgo es la pausa por inactividad, no el espacio) y Gemini 2.5 Flash en
+centavos al volumen de ~20 documentos por mes.
