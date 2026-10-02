@@ -172,7 +172,8 @@ async def _snapshot(
     return {
         "period": period,
         "spending": _by_currency(kinds, "expense"),
-        "income": _by_currency(kinds, "income"),
+        # En las vistas el ingreso resta (signed_amount < 0); se muestra su magnitud.
+        "income": {c: -t for c, t in _by_currency(kinds, "income").items()},
         "taxes": _by_currency(kinds, "tax"),
         "fees": _by_currency(kinds, "fee"),
         "transfers": _by_currency(kinds, "transfer"),

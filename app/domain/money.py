@@ -89,10 +89,11 @@ def parse_amount(raw: str | int | float | Decimal) -> Decimal:
 
     try:
         value = Decimal(normalized)
+        # quantize tambien puede fallar: con 27+ digitos enteros el resultado
+        # excede la precision del contexto (28) y levanta InvalidOperation.
+        return quantize(-value if negative else value)
     except InvalidOperation as exc:
         raise AmountParseError(f"no se pudo interpretar {raw!r} como monto") from exc
-
-    return quantize(-value if negative else value)
 
 
 def _normalize_separators(cleaned: str, *, original: object) -> str:

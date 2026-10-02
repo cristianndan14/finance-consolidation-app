@@ -16,6 +16,7 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.infra import db
 from app.repositories import manual_entries as entries_repo
@@ -95,6 +96,30 @@ class TestRepositorio:
         async with db.user_tx({"sub": str(bob.id), "role": "authenticated"}) as conn:
             assert await entries_repo.list_recent(conn) == []
 
+    async def test_bob_no_puede_borrar_los_movimientos_de_alice(
+        self, users: tuple[Actor, Actor]
+    ) -> None:
+        alice, bob = users
+        alice_claims = {"sub": str(alice.id), "role": "authenticated"}
+
+        async with db.user_tx(alice_claims) as conn:
+            entry_id = await entries_repo.create(
+                conn,
+                entry_date=date(2026, 3, 1),
+                kind="expense",
+                description="Alquiler",
+                amount=Decimal("150000.00"),
+                currency="ARS",
+                category_id=None,
+                notes=None,
+            )
+
+        async with db.user_tx({"sub": str(bob.id), "role": "authenticated"}) as conn:
+            await entries_repo.delete(conn, entry_id)
+
+        async with db.user_tx(alice_claims) as conn:
+            assert [e.id for e in await entries_repo.list_recent(conn)] == [entry_id]
+
 
 class TestEnLasVistas:
     async def test_gasto_manual_suma_como_consumo_en_cashflow_y_devengado(
@@ -159,3 +184,77 @@ class TestEnLasVistas:
 
             assert by_kind.get("expense") is None
             assert by_kind["income"] == Decimal("-800000.00")
+
+
+class TestElKindDelMovimientoManda:
+    """El `kind` del movimiento decide `category_kind`, no la categoria elegida.
+
+    Regresion: la rama manual de `v_tx_enriched` usaba
+    `coalesce(cat.kind, e.kind)`, asi que un ingreso con una categoria de gasto
+    terminaba como un gasto negativo (achicando el consumo) y viceversa. Se
+    inserta directo en la tabla, sin pasar por la validacion de la web, porque
+    lo que se prueba es la vista.
+    """
+
+    @staticmethod
+    async def _insert(
+        conn: AsyncConnection, *, kind: str, category_slug: str, amount: str, day: date
+    ) -> None:
+        await conn.execute(
+            text(
+                "insert into app.manual_entries "
+                "(user_id, entry_date, kind, description, amount, currency, category_id) "
+                "select cast(auth.uid() as uuid), :d, :k, 'x', cast(:a as numeric), 'ARS', id "
+                "from app.categories where slug = :slug and user_id is null"
+            ),
+            {"d": day, "k": kind, "a": amount, "slug": category_slug},
+        )
+
+    @staticmethod
+    async def _totals_by_kind(conn: AsyncConnection, view: str, month: int) -> dict[str, Decimal]:
+        rows = (
+            await conn.execute(
+                text(
+                    f"select category_kind, sum(total) as total from {view} "  # noqa: S608
+                    "where period_year = 2026 and period_month = :m group by category_kind"
+                ),
+                {"m": month},
+            )
+        ).mappings()
+        return {r["category_kind"]: Decimal(str(r["total"])) for r in rows}
+
+    async def test_ingreso_con_categoria_de_gasto_cuenta_como_ingreso(
+        self, users: tuple[Actor, Actor]
+    ) -> None:
+        alice, _ = users
+        async with db.user_tx({"sub": str(alice.id), "role": "authenticated"}) as conn:
+            await self._insert(
+                conn, kind="income", category_slug="otros", amount="1000.00", day=date(2026, 7, 3)
+            )
+            for view in (
+                "app.v_monthly_cashflow",
+                "app.v_monthly_accrual",
+                "app.v_monthly_base_accrual",
+            ):
+                by_kind = await self._totals_by_kind(conn, view, 7)
+                assert by_kind == {"income": Decimal("-1000.00")}, view
+
+    async def test_gasto_con_categoria_de_ingreso_cuenta_como_gasto(
+        self, users: tuple[Actor, Actor]
+    ) -> None:
+        alice, _ = users
+        async with db.user_tx({"sub": str(alice.id), "role": "authenticated"}) as conn:
+            await self._insert(
+                conn,
+                kind="expense",
+                category_slug="devoluciones",
+                amount="2500.00",
+                day=date(2026, 8, 20),
+            )
+            for view in (
+                "app.v_monthly_cashflow",
+                "app.v_monthly_accrual",
+                "app.v_monthly_base_accrual",
+            ):
+                by_kind = await self._totals_by_kind(conn, view, 8)
+                assert by_kind == {"expense": Decimal("2500.00")}, view

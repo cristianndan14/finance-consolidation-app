@@ -77,6 +77,11 @@ class TestParseAmount:
         with pytest.raises(AmountParseError):
             parse_amount(raw)
 
+    def test_monto_enorme_no_escapa_como_invalid_operation(self) -> None:
+        # Con 27+ digitos enteros, quantize excede la precision del contexto.
+        with pytest.raises(AmountParseError):
+            parse_amount("9" * 40)
+
     def test_decimal_pasa_intacto(self) -> None:
         assert parse_amount(Decimal("1234.56")) == Decimal("1234.56")
 

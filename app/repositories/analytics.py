@@ -148,6 +148,7 @@ _UNCATEGORIZED = text(
        and statement_status = 'confirmed'
        and review_status <> 'rejected'
        and category_id is null
+       and statement_id is not null  -- los movimientos manuales no tienen revision
     """
 )
 
