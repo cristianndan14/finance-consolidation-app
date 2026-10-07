@@ -23,7 +23,7 @@ redirect 303 a la pagina completa cuando la request no viene de HTMX.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Form, Request
 from starlette.datastructures import FormData
@@ -54,7 +54,11 @@ async def review_page(
     profile: CurrentProfileDep,
     settings: SettingsDep,
     statement_id: str,
+    edit: str | None = None,
 ) -> Response:
+    """`?edit=<id>` abre esa fila en modo edicion: es el camino sin JavaScript
+    del link "Editar". Un id ajeno o inexistente no coincide con ninguna fila y
+    la pagina queda entera en lectura."""
     async with db.user_tx(user.db_claims) as conn:
         state = await review_service.load(conn, statement_id, settings)
         document = await documents_repo.get(conn, state.statement.document_id) if state else None
@@ -63,11 +67,51 @@ async def review_page(
     if state is None:
         return _not_found(request, profile, user, settings)
 
-    return render(
-        request,
-        "review/page.html",
-        _context(request, state, document, profile, user, settings, categories),
-    )
+    context = _context(request, state, document, profile, user, settings, categories)
+    context["editing_id"] = edit
+    return render(request, "review/page.html", context)
+
+
+@router.get("/{statement_id}/transactions/{transaction_id}/row", include_in_schema=False)
+async def transaction_row(
+    request: Request,
+    user: CurrentUserDep,
+    profile: CurrentProfileDep,
+    settings: SettingsDep,
+    statement_id: str,
+    transaction_id: str,
+    mode: Literal["read", "edit"] = "read",
+    focus: bool = False,
+) -> Response:
+    """Una sola fila, en lectura o en edicion, para el swap de HTMX.
+
+    Es un GET sin efectos: no lleva CSRF, igual que la pagina. La pertenencia la
+    deciden RLS (un resumen ajeno da `None`) y que la transaccion este entre las
+    de este resumen: un id de otro resumen, aunque sea propio, es un 404.
+
+    `focus=1` es el retorno de foco al cancelar: el "Editar" de la fila vuelve
+    con `autofocus`, que htmx respeta despues del swap.
+    """
+    async with db.user_tx(user.db_claims) as conn:
+        state = await review_service.load(conn, statement_id, settings)
+        categories = await categories_repo.list_active(conn)
+
+    tx = next((t for t in state.transactions if t.id == transaction_id), None) if state else None
+    if state is None or tx is None:
+        return _not_found(request, profile, user, settings, title="No existe esa transacción")
+
+    if not is_htmx(request):
+        if mode == "edit":
+            target = f"/statements/{statement_id}/review?edit={tx.id}#tx-{tx.id}"
+        else:
+            target = f"/statements/{statement_id}/review#tx-{tx.id}"
+        return RedirectResponse(target, status_code=303)
+
+    context = _context(request, state, None, profile, user, settings, categories)
+    context["tx"] = tx
+    context["editing_id"] = tx.id if mode == "edit" and not state.statement.is_confirmed else None
+    context["focus_id"] = tx.id if focus else None
+    return render(request, "review/_row.html", context)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +130,8 @@ async def edit_transaction(
     form = await request.form()
     csrf.verify(_csrf_of(form), user.user_id, settings)
 
+    # Si la edicion se rechaza, la fila vuelve abierta junto al mensaje. Muestra
+    # los valores de la base, no lo que se tipeo: el mensaje dice que corregir.
     return await _mutate(
         request,
         user,
@@ -95,6 +141,7 @@ async def edit_transaction(
         lambda conn: review_service.edit_transaction(
             conn, transaction_id, _fields(form, review_service.EDITABLE_FIELDS)
         ),
+        editing_id_on_error=transaction_id,
     )
 
 
@@ -121,7 +168,15 @@ async def set_category(
             conn, transaction_id=transaction_id, category_id=category_id
         )
 
-    return await _mutate(request, user, profile, settings, statement_id, _apply)
+    return await _mutate(
+        request,
+        user,
+        profile,
+        settings,
+        statement_id,
+        _apply,
+        editing_id_on_error=transaction_id,
+    )
 
 
 @router.post("/{statement_id}/bulk", include_in_schema=False)
@@ -209,6 +264,7 @@ async def split_transaction(
         settings,
         statement_id,
         lambda conn: review_service.split_transaction(conn, transaction_id, parts),
+        editing_id_on_error=transaction_id,
     )
 
 
@@ -270,6 +326,7 @@ async def _mutate(
     settings: SettingsDep,
     statement_id: str,
     operation: Any,
+    editing_id_on_error: str | None = None,
 ) -> Response:
     """Ejecuta la operacion y devuelve el panel actualizado.
 
@@ -301,6 +358,7 @@ async def _mutate(
 
     context = _context(request, state, document, profile, user, settings, categories)
     context["error"] = error
+    context["editing_id"] = editing_id_on_error if error else None
 
     if is_htmx(request):
         return render(request, "review/_panel.html", context)
@@ -334,14 +392,18 @@ def _context(
 
 
 def _not_found(
-    request: Request, profile: CurrentProfileDep, user: CurrentUserDep, settings: SettingsDep
+    request: Request,
+    profile: CurrentProfileDep,
+    user: CurrentUserDep,
+    settings: SettingsDep,
+    title: str = "No existe ese resumen",
 ) -> Response:
     return render(
         request,
         "error.html",
         {
             "profile": profile,
-            "title": "No existe ese resumen",
+            "title": title,
             "detail": "O no es tuyo, que para el sistema es lo mismo.",
             "csrf_token": csrf.issue(user.user_id, settings),
         },
