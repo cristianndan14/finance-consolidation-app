@@ -11,48 +11,49 @@
   <h2>Cargar cotización</h2>
   <form method="post" action="/settings/fx" class="stack">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-      <label style="flex:1 1 8rem">Año
+    <div class="row">
+      <label class="grow-1">Año
         <input type="text" name="period_year" value="{{ default_year }}" required>
       </label>
-      <label style="flex:1 1 6rem">Mes
+      <label class="grow-sm">Mes
         <input type="text" name="period_month" value="{{ default_month }}" required>
       </label>
     </div>
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-      <label style="flex:1 1 6rem">De
+    <div class="row">
+      <label class="grow-sm">De
         <input type="text" name="base_currency" value="USD" required>
       </label>
-      <label style="flex:1 1 6rem">A
+      <label class="grow-sm">A
         <input type="text" name="quote_currency" value="ARS" required>
       </label>
-      <label style="flex:2 1 10rem">Cotización
+      <label class="grow-2">Cotización
         <input type="text" name="rate" placeholder="1.234,56" required>
       </label>
     </div>
-    <button type="submit" style="justify-self:start">Guardar</button>
+    <button type="submit" class="self-start">Guardar</button>
   </form>
 </div>
 
 <div class="card">
   <h2>Cotizaciones cargadas</h2>
   {% if rates %}
-  <table>
-    <thead>
-      <tr><th>Mes</th><th>Par</th><th style="text-align:right">Cotización</th><th>Origen</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for rate in rates %}
-      <tr>
-        <td>{{ '%02d'|format(rate.period_month) }}/{{ rate.period_year }}</td>
-        <td>{{ rate.base_currency }} → {{ rate.quote_currency }}</td>
-        <td style="text-align:right">{{ rate.rate | ars }}</td>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Mes</th><th>Par</th><th class="num">Cotización</th><th>Origen</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for rate in rates %}
+        <tr>
+          <td>{{ '%02d'|format(rate.period_month) }}/{{ rate.period_year }}</td>
+          <td>{{ rate.base_currency }} → {{ rate.quote_currency }}</td>
+          <td class="num">{{ rate.rate | ars }}</td>
         <td>
           {% if rate.is_global %}<span class="tag">global</span>{% else %}<span class="tag">{{ rate.source }}</span>{% endif %}
         </td>
         <td>
           {% if not rate.is_global %}
-          <form method="post" action="/settings/fx/{{ rate.id }}/delete" style="margin:0">
+          <form method="post" action="/settings/fx/{{ rate.id }}/delete" class="inline-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="quiet" type="submit">Borrar</button>
           </form>
@@ -60,10 +61,11 @@
         </td>
       </tr>
       {% endfor %}
-    </tbody>
-  </table>
+      </tbody>
+    </table>
+  </div>
   {% else %}
-  <p class="sub" style="margin-bottom:0">Todavía no cargaste ninguna cotización.</p>
+  <p class="sub mb-0">Todavía no cargaste ninguna cotización.</p>
   {% endif %}
 </div>
 {% endblock %}

@@ -15,37 +15,39 @@
   <button type="submit">Enviar invitación</button>
 </form>
 
-<h2 style="font-size:1rem;margin-top:2rem">Enviadas</h2>
+<h2 class="h-section">Enviadas</h2>
 {% if invitations %}
-<table>
-  <thead>
-    <tr><th>Email</th><th>Estado</th><th>Vence</th><th>Invitó</th><th></th></tr>
-  </thead>
-  <tbody>
-    {% for inv in invitations %}
-    <tr>
-      <td>{{ inv.email }}</td>
-      <td>
-        {% if inv.is_pending %}
-          <span class="tag">sin cuenta todavía</span>
-        {% else %}
-          <span class="tag">cuenta creada</span>
-        {% endif %}
-      </td>
-      <td>{{ inv.expires_at.strftime('%d/%m/%Y') }}</td>
-      <td>{{ inv.invited_by_email }}</td>
-      <td>
-        {% if inv.is_pending %}
-        <form method="post" action="/admin/invitations/{{ inv.id }}/revoke" style="margin:0">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="quiet" type="submit">Revocar</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Email</th><th>Estado</th><th>Vence</th><th>Invitó</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for inv in invitations %}
+      <tr>
+        <td>{{ inv.email }}</td>
+        <td>
+          {% if inv.is_pending %}
+            <span class="tag">sin cuenta todavía</span>
+          {% else %}
+            <span class="tag">cuenta creada</span>
+          {% endif %}
+        </td>
+        <td>{{ inv.expires_at.strftime('%d/%m/%Y') }}</td>
+        <td>{{ inv.invited_by_email }}</td>
+        <td>
+          {% if inv.is_pending %}
+          <form method="post" action="/admin/invitations/{{ inv.id }}/revoke" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="quiet" type="submit">Revocar</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
 <p class="sub">Todavía no invitaste a nadie.</p>
 {% endif %}

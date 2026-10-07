@@ -1,0 +1,12 @@
+{# Badge del estado de un documento. Un caso por cada valor del check de
+   documents.status; lo desconocido cae al valor crudo para no esconderlo. #}
+{% macro status_badge(status) -%}
+  {%- if status == 'uploaded' -%}<span class="badge badge--muted">Procesando</span>
+  {%- elif status == 'text_extracted' -%}<span class="badge badge--muted">Texto extraído</span>
+  {%- elif status == 'parsed' -%}<span class="badge badge--warn">Para revisar</span>
+  {%- elif status == 'needs_review' -%}<span class="badge badge--warn">No cuadra: revisar</span>
+  {%- elif status == 'confirmed' -%}<span class="badge badge--ok">Confirmado</span>
+  {%- elif status == 'failed' -%}<span class="badge badge--bad">Falló</span>
+  {%- else -%}<span class="badge badge--muted">{{ status }}</span>
+  {%- endif -%}
+{%- endmacro %}
