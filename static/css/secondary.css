@@ -1,0 +1,7 @@
+/*
+ * Secondary screens styles (T5 owner)
+ *
+ * Pantallas: login, error, settings, admin/invitations.
+ * Estos archivos heredan el sistema base (app.css) sin definir clases nuevas.
+ * Si se necesita una nueva clase, irá con prefijo .sec-* y solo si no existe en app.css.
+ */

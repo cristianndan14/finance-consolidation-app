@@ -1,0 +1,4 @@
+/* Dueno: T2. Solo clases nuevas con prefijo .dash-*; nunca elementos ni componentes de app.css; sin colores hex (usar tokens). */
+
+.dash-hero { margin-bottom: var(--space-4); }
+.dash-hero-cur { font-size: var(--fs-l); font-weight: 600; color: var(--muted); }

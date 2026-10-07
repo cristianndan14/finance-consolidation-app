@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse, Response
 
 from app import __version__
@@ -28,7 +29,7 @@ from app.web import manual_entries as web_manual_entries
 from app.web import review as web_review
 from app.web import settings_page as web_settings
 from app.web.middleware import SessionCookieMiddleware
-from app.web.templates import is_htmx, render
+from app.web.templates import STATIC_DIR, is_htmx, render
 
 log = get_logger(__name__)
 
@@ -78,6 +79,9 @@ app.include_router(web_manual_entries.router)
 app.include_router(web_review.router)
 app.include_router(web_exports.router)
 app.include_router(admin.router)
+
+# check_dir queda en True: sin la carpeta la app falla al arrancar, no sirve 404s.
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.exception_handler(NotAuthenticatedError)
