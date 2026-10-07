@@ -56,8 +56,12 @@ async def dashboard(
     year: int | None = None,
     month: int | None = None,
     mode: str | None = None,
+    year_month: str | None = None,
 ) -> Response:
     view_mode = _mode(mode)
+    # El form GET del <noscript> manda `year_month=2026-3`; solo vale si no vino year/month.
+    if year is None and month is None and (parsed := _parse_year_month(year_month)):
+        year, month = parsed
 
     async with db.user_tx(user.db_claims) as conn:
         periods = await analytics.available_periods(conn, mode=view_mode)
@@ -89,6 +93,9 @@ async def dashboard(
             "forward": forward,
             "forward_by_currency": _forward_totals(forward),
             "uncategorized": pending,
+            # Default de los .get() del desglose: format_ars exige Decimal (quantize),
+            # un 0 entero rompe el render cuando una moneda no tiene ese tipo.
+            "zero": Decimal("0"),
             "csrf_token": csrf.issue(user.user_id, settings),
         },
     )
@@ -156,6 +163,36 @@ def _pick(
     return None
 
 
+def _parse_year_month(raw: str | None) -> tuple[int, int] | None:
+    """`"2026-3"` o `"2026-03"` -> `(2026, 3)`; cualquier otra cosa -> `None`."""
+    if not raw:
+        return None
+    year_raw, sep, month_raw = raw.partition("-")
+    if not sep or not year_raw.isdecimal() or not month_raw.isdecimal():
+        return None
+    year, month = int(year_raw), int(month_raw)
+    return (year, month) if 1 <= month <= 12 else None
+
+
+def _net(
+    spending: dict[str, Decimal],
+    income: dict[str, Decimal],
+    taxes: dict[str, Decimal],
+    fees: dict[str, Decimal],
+    currencies: list[str],
+) -> dict[str, Decimal]:
+    """Neto por moneda: ingresos - (consumo + impuestos + comisiones).
+
+    Impuestos y comisiones se suman con su signo (un reintegro es negativo y sube
+    el neto). Las transferencias quedan afuera: se contarian dos veces.
+    """
+    zero = Decimal("0")
+    return {
+        c: income.get(c, zero) - (spending.get(c, zero) + taxes.get(c, zero) + fees.get(c, zero))
+        for c in currencies
+    }
+
+
 async def _snapshot(
     conn: Any, period: analytics.Period, *, mode: analytics.Mode = "cashflow"
 ) -> dict[str, Any]:
@@ -169,19 +206,26 @@ async def _snapshot(
     merchants = await analytics.by_merchant(conn, period, mode=mode)
     base = await analytics.in_base_currency(conn, period, mode=mode)
 
+    spending = _by_currency(kinds, "expense")
+    # En las vistas el ingreso resta (signed_amount < 0); se muestra su magnitud.
+    income = {c: -t for c, t in _by_currency(kinds, "income").items()}
+    taxes = _by_currency(kinds, "tax")
+    fees = _by_currency(kinds, "fee")
+    currencies = sorted({k.currency for k in kinds})
+
     return {
         "period": period,
-        "spending": _by_currency(kinds, "expense"),
-        # En las vistas el ingreso resta (signed_amount < 0); se muestra su magnitud.
-        "income": {c: -t for c, t in _by_currency(kinds, "income").items()},
-        "taxes": _by_currency(kinds, "tax"),
-        "fees": _by_currency(kinds, "fee"),
+        "spending": spending,
+        "income": income,
+        "taxes": taxes,
+        "fees": fees,
         "transfers": _by_currency(kinds, "transfer"),
+        "net": _net(spending, income, taxes, fees, currencies),
         "categories": _top(categories),
         "income_categories": _top(income_categories),
         "merchants": merchants,
         "base": base,
-        "currencies": sorted({k.currency for k in kinds}),
+        "currencies": currencies,
         "has_data": bool(kinds),
     }
 

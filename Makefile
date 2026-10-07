@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SUPABASE := npx --yes supabase
 
-.PHONY: help install dev db-up db-down db-reset migrate seed lint fmt type test test-unit test-rls test-llm check css clean
+.PHONY: help install dev db-up db-down db-reset migrate seed lint fmt type test test-unit test-rls test-llm check clean
 
 help:  ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -52,10 +52,6 @@ test-llm:  ## Accuracy real contra Gemini (CUESTA DINERO)
 	uv run pytest -q -m llm
 
 check: lint type test  ## Todo lo que corre CI
-
-# ─── Frontend ────────────────────────────────────────────────────────────────
-css:  ## Compila Tailwind en modo watch
-	npx --yes tailwindcss -i ./static/css/input.css -o ./static/css/tailwind.css --watch
 
 clean:
 	rm -rf .mypy_cache .ruff_cache .pytest_cache htmlcov .coverage

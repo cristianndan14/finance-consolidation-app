@@ -20,6 +20,7 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 COPY app ./app
 COPY templates ./templates
+COPY static ./static
 COPY README.md ./README.md
 RUN uv sync --frozen --no-dev
 

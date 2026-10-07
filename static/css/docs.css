@@ -1,0 +1,10 @@
+/* Dueno: T4. Solo clases nuevas con prefijo .doc-*; nunca elementos ni componentes de app.css; sin colores hex (usar tokens). */
+
+.doc-text-layer {
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 0.8rem;
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+  border-radius: 6px;
+}

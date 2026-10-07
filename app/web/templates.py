@@ -7,6 +7,8 @@ datos financieros o emails, asi que escapar por default no es opcional.
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,31 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # numero conviviendo: en una pantalla cuya razon de ser es verificar cifras,
 # leer `1234.56` en un lado y `1.234,56` en otro es una fuente de errores.
 templates.env.filters["ars"] = format_ars
+
+STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
+
+
+def compute_static_version(static_dir: Path) -> str:
+    """Hash corto del contenido de los CSS, para cache-bust en `?v=`.
+
+    `__version__` es fijo y el mtime lo pisa el COPY de Docker, asi que ninguno
+    cambia de forma confiable entre deploys. Si falta la carpeta devuelve "dev":
+    el import nunca falla (el error fuerte lo da el mount de StaticFiles).
+    """
+    if not static_dir.is_dir():
+        return "dev"
+    files = [static_dir / "app.css", *sorted((static_dir / "css").glob("*.css"))]
+    return hash_contents(f.read_bytes() for f in files if f.is_file())
+
+
+def hash_contents(chunks: Iterable[bytes]) -> str:
+    digest = hashlib.sha1(usedforsecurity=False)
+    for chunk in chunks:
+        digest.update(chunk)
+    return digest.hexdigest()[:10]
+
+
+templates.env.globals["static_version"] = compute_static_version(STATIC_DIR)
 
 
 def render(

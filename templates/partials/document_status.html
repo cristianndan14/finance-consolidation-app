@@ -1,12 +1,14 @@
 {# Fragmento de estado. Se refresca solo mientras haya trabajo pendiente:
    cuando el documento llega a un estado final sale sin hx-trigger y el polling
    se detiene sin que nadie lo cancele. #}
+{% from "partials/_status_badge.html" import status_badge %}
 <div id="document-status"
      {% if document.is_processing %}
      hx-get="/documents/{{ document.id }}/status"
      hx-trigger="every 2s"
      hx-swap="outerHTML"
      {% endif %}>
+  {{ status_badge(document.status) }}
   {% if document.status == 'uploaded' %}
     <div class="flash">
       Procesando el PDF…

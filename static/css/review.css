@@ -1,0 +1,37 @@
+/* Dueno: T3. Solo clases nuevas con prefijo .rv-*; nunca elementos ni componentes de app.css; sin colores hex (usar tokens). */
+
+/* ─── Banner de cuadre ─────────────────────────────────────────────────── */
+.rv-ledger { max-width: 34rem; }
+.rv-ledger-cell { border: 0; padding: 0.15rem 0; }
+.rv-ledger-total { padding: 0.3rem 0; }
+.rv-ledger-note { padding-left: 0.75rem; }
+
+/* ─── Fila en lectura ──────────────────────────────────────────────────── */
+.rv-date { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rv-desc { display: block; color: var(--fg); }
+.rv-badges { margin-top: 0.25rem; }
+.rv-source { display: block; margin-top: 0.25rem; }
+.rv-source-line {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.rv-amount { white-space: nowrap; }
+
+/* Descartada: sin opacity (contraste AA); apagada y tachada, mas el badge. */
+.rv-rejected .rv-desc,
+.rv-rejected .rv-amount,
+.rv-rejected .rv-date { color: var(--muted); }
+.rv-rejected .rv-desc,
+.rv-rejected .rv-amount { text-decoration: line-through; }
+
+/* Sospechosa: senal en el borde de la primera celda. */
+.rv-suspicious > td:first-child { border-left: 3px solid var(--neg); }
+
+/* ─── Fila en edicion ──────────────────────────────────────────────────── */
+.rv-edit-cell { padding: 0; }
+.rv-pad { padding: 0.4rem 0.6rem; }
+.rv-pad + .rv-pad { padding-top: 0; }
+.rv-field { display: block; }
+.rv-fill { width: 100%; box-sizing: border-box; }

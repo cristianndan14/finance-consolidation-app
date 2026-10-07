@@ -19,6 +19,7 @@ Las tres que importan y por que se testean de punta a punta:
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -168,6 +169,33 @@ async def _find(
 ) -> transactions_repo.Transaction:
     rows = await _rows(user, statement_id)
     return next(row for row in rows if row.description_raw == description)
+
+
+def _row_html(html: str, transaction_id: str) -> str:
+    """La fila `<tr id="tx-…">` de esa transaccion, hasta su `</tr>`.
+
+    Las aserciones sobre `name="amount"` se acotan a las filas: el formulario
+    "agregar a mano" del panel tambien lo trae.
+    """
+    start = html.index(f'id="tx-{transaction_id}"')
+    return html[start : html.index("</tr>", start)]
+
+
+def _rows_html(html: str) -> list[str]:
+    """Todos los bloques `<tr id="tx-…">…</tr>` de la pagina o el panel."""
+    return re.findall(r'<tr id="tx-.*?</tr>', html, flags=re.DOTALL)
+
+
+async def _other_statement(user: uuid.UUID) -> str:
+    """Un segundo resumen parseado del mismo usuario, con sus propias filas."""
+    document = await _make_document(user)
+    outcome = await parse_service.parse_document(
+        user_id=str(user),
+        document_id=document.id,
+        extractor=_cassette(),
+        settings=_settings(),
+    )
+    return outcome.statement_ids[0]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -825,6 +853,201 @@ class TestRutas:
         response = await client.get(f"/statements/{outcome.statement_ids[0]}/review")
 
         assert response.status_code == 404
+
+    # ─── La fila en lectura / edicion (GET del fragmento) ────────────────────
+    async def test_la_fila_en_edicion_trae_el_formulario(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        target = await _find(user, statement.id, "SUPERMERCADO COTO")
+
+        response = await client.get(
+            f"/statements/{statement.id}/transactions/{target.id}/row?mode=edit",
+            headers={"HX-Request": "true"},
+        )
+
+        assert response.status_code == 200
+        assert f'id="tx-{target.id}"' in response.text
+        assert 'name="amount"' in response.text
+        assert 'name="csrf_token"' in response.text
+        assert "Monto" in response.text
+        # El form no hereda el target del <tr>: sigue reemplazando el panel.
+        assert 'hx-target="#review-panel"' in response.text
+
+    async def test_la_fila_en_lectura_no_trae_el_formulario(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        target = await _find(user, statement.id, "SUPERMERCADO COTO")
+
+        response = await client.get(
+            f"/statements/{statement.id}/transactions/{target.id}/row?mode=read",
+            headers={"HX-Request": "true"},
+        )
+
+        assert response.status_code == 200
+        assert 'name="amount"' not in response.text
+        assert "60.000,00" in response.text
+        assert "15/03 SUPERMERCADO COTO" in response.text
+
+    async def test_cancelar_devuelve_el_foco_al_editar(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        target = await _find(user, statement.id, "SUPERMERCADO COTO")
+        url = f"/statements/{statement.id}/transactions/{target.id}/row?mode=read"
+        editar = re.compile(r"<a [^>]*mode=edit[^>]*\bautofocus\b[^>]*>Editar</a>")
+
+        with_focus = await client.get(f"{url}&focus=1", headers={"HX-Request": "true"})
+        without = await client.get(url, headers={"HX-Request": "true"})
+
+        assert editar.search(with_focus.text)
+        assert "autofocus" not in without.text
+
+    async def test_la_fila_de_otro_usuario_no_existe(
+        self, client: httpx.AsyncClient, two_users: tuple[Actor, Actor]
+    ) -> None:
+        _owner, other = two_users
+        foreign_statement = await _other_statement(other.id)
+        foreign = await _find(other.id, foreign_statement, "SUPERMERCADO COTO")
+
+        for mode in ("read", "edit"):
+            response = await client.get(
+                f"/statements/{foreign_statement}/transactions/{foreign.id}/row?mode={mode}",
+                headers={"HX-Request": "true"},
+            )
+
+            assert response.status_code == 404
+            assert "SUPERMERCADO COTO" not in response.text
+
+    async def test_una_transaccion_de_otro_resumen_no_existe(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        """Propia, pero de otro resumen: la URL tiene que ser coherente."""
+        second = await _other_statement(user)
+        from_second = await _find(user, second, "SUPERMERCADO COTO")
+
+        response = await client.get(
+            f"/statements/{statement.id}/transactions/{from_second.id}/row?mode=edit",
+            headers={"HX-Request": "true"},
+        )
+
+        assert response.status_code == 404
+
+    async def test_un_resumen_confirmado_no_ofrece_editar(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        target = await _find(user, statement.id, "SUPERMERCADO COTO")
+        async with db.system_tx(str(user)) as conn:
+            await review_service.bulk_review(
+                conn, statement.id, transaction_ids=[], action="confirm"
+            )
+            await review_service.confirm_statement(conn, statement.id, _settings())
+
+        fragment = await client.get(
+            f"/statements/{statement.id}/transactions/{target.id}/row?mode=edit",
+            headers={"HX-Request": "true"},
+        )
+        page = await client.get(f"/statements/{statement.id}/review?edit={target.id}")
+
+        assert fragment.status_code == 200
+        assert 'name="amount"' not in fragment.text
+        assert "mode=edit" not in fragment.text
+        assert "?edit=" not in fragment.text
+        rows = _rows_html(page.text)
+        assert len(rows) == len(LINES)
+        assert all("mode=edit" not in row and "?edit=" not in row for row in rows)
+        assert all('name="amount"' not in row for row in rows)
+
+    async def test_sin_htmx_la_fila_redirige_a_la_pagina(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        """El camino sin JavaScript: la pagina entera con esa fila abierta."""
+        target = await _find(user, statement.id, "SUPERMERCADO COTO")
+        base = f"/statements/{statement.id}"
+
+        edit = await client.get(
+            f"{base}/transactions/{target.id}/row?mode=edit", follow_redirects=False
+        )
+        read = await client.get(
+            f"{base}/transactions/{target.id}/row?mode=read", follow_redirects=False
+        )
+
+        assert edit.status_code == 303
+        assert edit.headers["location"] == f"{base}/review?edit={target.id}#tx-{target.id}"
+        assert read.status_code == 303
+        assert read.headers["location"] == f"{base}/review#tx-{target.id}"
+
+        page = await client.get(f"{base}/review?edit={target.id}")
+
+        assert page.status_code == 200
+        assert 'name="amount"' in _row_html(page.text, target.id)
+        others = [row for row in _rows_html(page.text) if f'id="tx-{target.id}"' not in row]
+        assert len(others) == len(LINES) - 1
+        assert all('name="amount"' not in row for row in others)
+
+    async def test_editar_un_id_ajeno_o_inexistente_deja_todo_en_lectura(
+        self,
+        client: httpx.AsyncClient,
+        statement: statements_repo.Statement,
+        two_users: tuple[Actor, Actor],
+    ) -> None:
+        _owner, other = two_users
+        foreign_statement = await _other_statement(other.id)
+        foreign = await _find(other.id, foreign_statement, "SUPERMERCADO COTO")
+
+        for edit in (foreign.id, str(uuid.uuid4())):
+            response = await client.get(f"/statements/{statement.id}/review?edit={edit}")
+
+            assert response.status_code == 200
+            rows = _rows_html(response.text)
+            assert len(rows) == len(LINES)
+            assert all('name="amount"' not in row for row in rows)
+
+    async def test_un_modo_desconocido_se_rechaza(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        target = await _find(user, statement.id, "SUPERMERCADO COTO")
+
+        response = await client.get(
+            f"/statements/{statement.id}/transactions/{target.id}/row?mode=bogus",
+            headers={"HX-Request": "true"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_la_fila_sin_sesion_redirige_al_login_por_htmx(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        from app.main import app
+
+        target = await _find(user, statement.id, "SUPERMERCADO COTO")
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as anonymous:
+            response = await anonymous.get(
+                f"/statements/{statement.id}/transactions/{target.id}/row?mode=edit",
+                headers={"HX-Request": "true"},
+            )
+
+        assert response.status_code == 401
+        assert response.headers["HX-Redirect"] == "/login"
+        assert "SUPERMERCADO COTO" not in response.text
+
+    async def test_una_edicion_rechazada_vuelve_con_la_fila_abierta(
+        self, client: httpx.AsyncClient, user: uuid.UUID, statement: statements_repo.Statement
+    ) -> None:
+        target = await _find(user, statement.id, "SUPERMERCADO COTO")
+
+        response = await client.post(
+            f"/statements/{statement.id}/transactions/{target.id}",
+            data={"csrf_token": self._csrf(user), "amount": "mucha plata"},
+            headers={"HX-Request": "true"},
+        )
+
+        assert response.status_code == 200
+        assert "review-panel" in response.text
+        assert 'name="amount"' in _row_html(response.text, target.id)
+        others = [row for row in _rows_html(response.text) if f'id="tx-{target.id}"' not in row]
+        assert all('name="amount"' not in row for row in others)
 
 
 class TestHuerfanas:
