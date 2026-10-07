@@ -51,10 +51,10 @@
     <div class="label muted small">Balance neto del mes</div>
     <div class="hero-net {{ 'pos' if net > 0 else ('neg' if net < 0 else '') }}">{{ signed(net) }} <span class="dash-hero-cur">{{ currency }}</span></div>
     <div class="muted small">
-      ingresos {{ current.income.get(currency, 0) | ars }}
-      − (consumo {{ current.spending.get(currency, 0) | ars }}
-      + impuestos {{ current.taxes.get(currency, 0) | ars }}
-      + comisiones {{ current.fees.get(currency, 0) | ars }})
+      ingresos {{ current.income.get(currency, zero) | ars }}
+      − (consumo {{ current.spending.get(currency, zero) | ars }}
+      + impuestos {{ current.taxes.get(currency, zero) | ars }}
+      + comisiones {{ current.fees.get(currency, zero) | ars }})
     </div>
     {% if currency in previous.net %}
       {% set net_delta = net - previous.net[currency] %}

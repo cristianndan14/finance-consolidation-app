@@ -80,3 +80,45 @@ def test_signed_negative_has_single_sign() -> None:
 def test_signed_positive_and_zero() -> None:
     assert _signed(D("1234.50")) == "+1.234,50"
     assert _signed(D("0")) == "0,00"
+
+
+def _snapshot(spending: dict[str, Decimal], income: dict[str, Decimal]) -> dict[str, object]:
+    currencies = sorted({*spending, *income})
+    return {
+        "spending": spending,
+        "income": income,
+        "taxes": {},
+        "fees": {},
+        "transfers": {},
+        "net": _net(spending, income, {}, {}, currencies),
+        "categories": {},
+        "income_categories": {},
+        "merchants": [],
+        "base": [],
+        "currencies": currencies,
+        "has_data": True,
+    }
+
+
+def test_full_dashboard_renders_currency_missing_some_kinds() -> None:
+    """Regresion: el desglose hacia `.get(currency, 0) | ars` y `format_ars`
+    rompe con un int (500 en produccion con una moneda sin ingresos)."""
+    from app.domain.dates import Period
+
+    period = Period(year=2026, month=9)
+    html = templates.env.get_template("dashboard/index.html").render(
+        profile=None,
+        period=period,
+        periods=[period],
+        mode="cashflow",
+        current=_snapshot({"USD": D("12.50")}, {}),
+        previous=_snapshot({}, {}),
+        deltas={},
+        forward=[],
+        forward_by_currency={},
+        uncategorized=0,
+        csrf_token="x",
+        zero=D("0"),
+    )
+    assert "ingresos 0,00" in html
+    assert MINUS + "12,50" in html

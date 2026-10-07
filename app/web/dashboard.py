@@ -93,6 +93,9 @@ async def dashboard(
             "forward": forward,
             "forward_by_currency": _forward_totals(forward),
             "uncategorized": pending,
+            # Default de los .get() del desglose: format_ars exige Decimal (quantize),
+            # un 0 entero rompe el render cuando una moneda no tiene ese tipo.
+            "zero": Decimal("0"),
             "csrf_token": csrf.issue(user.user_id, settings),
         },
     )
