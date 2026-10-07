@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% macro signed(n) %}{{ '+' if n > 0 else ('−' if n < 0 else '') }}{{ n | abs | ars }}{% endmacro %}
 {% block title %}Inicio — Finance Consolidation{% endblock %}
 {% block content %}
-<div style="display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap">
+<div class="row ai-baseline">
   <h1>Hola{% if profile.display_name %}, {{ profile.display_name }}{% endif %}</h1>
-  <form method="get" action="/" style="margin-left:auto;display:flex;gap:.5rem;align-items:baseline">
+  <form method="get" action="/" class="ml-auto flex gap-3 ai-baseline">
     <input type="hidden" name="mode" value="{{ mode }}">
-    <label style="flex-direction:row;align-items:center;gap:.4rem">
+    <label class="label-inline">
       Mes
       <select name="year_month" onchange="var v=this.value.split('-'); window.location='/?year='+v[0]+'&month='+v[1]+'&mode={{ mode }}'">
         {% for p in periods %}
@@ -13,23 +14,27 @@
         {% endfor %}
       </select>
     </label>
+    <noscript><button class="btn-sm">Ver</button></noscript>
   </form>
-  <div style="display:flex;gap:.5rem">
-    <a class="tag" href="/export/transactions.csv?year={{ period.year }}&month={{ period.month }}">Exportar CSV</a>
-    <a class="tag" href="/export/transactions.xlsx?year={{ period.year }}&month={{ period.month }}">Exportar XLSX</a>
+  <div class="flex gap-3">
+    <a class="btn btn-quiet btn-sm" href="/export/transactions.csv?year={{ period.year }}&month={{ period.month }}">Exportar CSV</a>
+    <a class="btn btn-quiet btn-sm" href="/export/transactions.xlsx?year={{ period.year }}&month={{ period.month }}">Exportar XLSX</a>
   </div>
 </div>
-<p class="sub">
-  Resumen de {{ period }}, sobre lo confirmado —
-  <a href="/?year={{ period.year }}&month={{ period.month }}&mode=cashflow"{% if mode == 'cashflow' %} style="font-weight:600;color:var(--fg)"{% endif %}>flujo de caja</a>
-  ·
-  <a href="/?year={{ period.year }}&month={{ period.month }}&mode=accrual"{% if mode == 'accrual' %} style="font-weight:600;color:var(--fg)"{% endif %}>devengado</a>
-  {% if mode == 'accrual' %}
-    <span style="color:var(--muted)"> — contando el mes de la compra real, no el mes del resumen</span>
-  {% else %}
-    <span style="color:var(--muted)"> — contando el mes en que la cuota cae en el resumen</span>
-  {% endif %}
-</p>
+<div class="row ai-center mb-2">
+  <div class="seg" role="group" aria-label="Criterio de cómputo">
+    <a href="/?year={{ period.year }}&month={{ period.month }}&mode=cashflow"{% if mode == 'cashflow' %} aria-current="true"{% endif %}>Flujo de caja</a>
+    <a href="/?year={{ period.year }}&month={{ period.month }}&mode=accrual"{% if mode == 'accrual' %} aria-current="true"{% endif %}>Devengado</a>
+  </div>
+  <p class="sub mb-0">
+    Resumen de {{ period }}, sobre lo confirmado
+    {% if mode == 'accrual' %}
+      — contando el mes de la compra real, no el mes del resumen
+    {% else %}
+      — contando el mes en que la cuota cae en el resumen
+    {% endif %}
+  </p>
+</div>
 
 {% if uncategorized > 0 %}
 <div class="flash">
@@ -41,13 +46,30 @@
 {% for currency in current.currencies %}
 <div class="card">
   <h2>{{ currency }}</h2>
+  {% set net = current.net[currency] %}
+  <div class="dash-hero">
+    <div class="label muted small">Balance neto del mes</div>
+    <div class="hero-net {{ 'pos' if net > 0 else ('neg' if net < 0 else '') }}">{{ signed(net) }} <span class="dash-hero-cur">{{ currency }}</span></div>
+    <div class="muted small">
+      ingresos {{ current.income.get(currency, 0) | ars }}
+      − (consumo {{ current.spending.get(currency, 0) | ars }}
+      + impuestos {{ current.taxes.get(currency, 0) | ars }}
+      + comisiones {{ current.fees.get(currency, 0) | ars }})
+    </div>
+    {% if currency in previous.net %}
+      {% set net_delta = net - previous.net[currency] %}
+      <div class="muted small">
+        <span class="{{ 'pos' if net_delta > 0 else ('neg' if net_delta < 0 else '') }}">{{ signed(net_delta) }}</span> vs. mes anterior
+      </div>
+    {% endif %}
+  </div>
   <div class="kpis">
     <div class="kpi">
       <div class="label">Consumo del mes</div>
       <div class="value">{{ current.spending[currency] | ars if currency in current.spending else "0,00" }}</div>
       {% set delta = deltas.get(currency) %}
       {% if delta is none %}
-        <div class="delta" style="color:var(--muted)">sin dato del mes anterior</div>
+        <div class="delta">sin dato del mes anterior</div>
       {% else %}
         <div class="delta {{ 'up' if delta > 0 else 'down' }}">
           {{ '+' if delta > 0 else '' }}{{ delta | ars }} vs. mes anterior
@@ -81,18 +103,20 @@
   </div>
 
   {% if current.categories.get(currency) %}
+  <div class="table-wrap">
   <table>
-    <thead><tr><th>Categoría</th><th style="text-align:right">Total</th><th style="text-align:right">Tx</th></tr></thead>
+    <thead><tr><th>Categoría</th><th class="num">Total</th><th class="num">Tx</th></tr></thead>
     <tbody>
       {% for cat in current.categories.get(currency) %}
       <tr>
         <td>{{ cat.category_name }}</td>
-        <td style="text-align:right">{{ cat.total | ars }}</td>
-        <td style="text-align:right">{{ cat.tx_count }}</td>
+        <td class="num">{{ cat.total | ars }}</td>
+        <td class="num">{{ cat.tx_count }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endfor %}
@@ -100,35 +124,38 @@
 {% if current.merchants %}
 <div class="card">
   <h2>Top comerciantes</h2>
+  <div class="table-wrap">
   <table>
-    <thead><tr><th>Comercio</th><th>Moneda</th><th style="text-align:right">Total</th><th style="text-align:right">Tx</th></tr></thead>
+    <thead><tr><th>Comercio</th><th>Moneda</th><th class="num">Total</th><th class="num">Tx</th></tr></thead>
     <tbody>
       {% for m in current.merchants %}
       <tr>
         <td>{{ m.merchant_name }}</td>
         <td>{{ m.currency }}</td>
-        <td style="text-align:right">{{ m.total | ars }}</td>
-        <td style="text-align:right">{{ m.tx_count }}</td>
+        <td class="num">{{ m.total | ars }}</td>
+        <td class="num">{{ m.tx_count }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 
 {% if current.base %}
 <div class="card">
   <h2>En moneda base</h2>
+  <div class="table-wrap">
   <table>
-    <thead><tr><th>Moneda</th><th style="text-align:right">Total</th><th style="text-align:right">Convertido</th></tr></thead>
+    <thead><tr><th>Moneda</th><th class="num">Total</th><th class="num">Convertido</th></tr></thead>
     <tbody>
       {% for b in current.base %}
       <tr>
         <td>{{ b.currency }}</td>
-        <td style="text-align:right">{{ b.total | ars }}</td>
-        <td style="text-align:right">
+        <td class="num">{{ b.total | ars }}</td>
+        <td class="num">
           {% if b.missing_rate %}
-            <span style="color:var(--muted)">falta cotización — <a href="/settings">cargarla</a></span>
+            <span class="muted">falta cotización — <a href="/settings">cargarla</a></span>
           {% else %}
             {{ b.total_base | ars }} {{ b.base_currency }}
           {% endif %}
@@ -137,19 +164,21 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 
 {% if forward %}
 <div class="card">
   <h2>Cuotas comprometidas</h2>
-  <p class="sub" style="margin-bottom:.75rem">
+  <p class="sub mb-2">
     Lo que ya está comprometido en los próximos meses:
     {% for currency, total in forward_by_currency.items() %}{{ total | ars }} {{ currency }}{% if not loop.last %} · {% endif %}{% endfor %}
   </p>
+  <div class="table-wrap">
   <table>
     <thead>
-      <tr><th>Comercio</th><th>Categoría</th><th>Moneda</th><th style="text-align:right">Cuota</th><th style="text-align:right">Restan</th><th style="text-align:right">Saldo</th></tr>
+      <tr><th>Comercio</th><th>Categoría</th><th>Moneda</th><th class="num">Cuota</th><th class="num">Restan</th><th class="num">Saldo</th></tr>
     </thead>
     <tbody>
       {% for f in forward %}
@@ -157,13 +186,14 @@
         <td>{{ f.merchant_name }}</td>
         <td>{{ f.category_name }}</td>
         <td>{{ f.currency }}</td>
-        <td style="text-align:right">{{ f.installment_amount | ars }} ({{ f.installments_paid }}/{{ f.installment_total }})</td>
-        <td style="text-align:right">{{ f.installments_left }}</td>
-        <td style="text-align:right">{{ f.remaining_amount | ars }}</td>
+        <td class="num">{{ f.installment_amount | ars }} ({{ f.installments_paid }}/{{ f.installment_total }})</td>
+        <td class="num">{{ f.installments_left }}</td>
+        <td class="num">{{ f.remaining_amount | ars }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 
@@ -184,31 +214,53 @@
   var year = {{ period.year }};
   var month = {{ period.month }};
   var mode = {{ mode | tojson }};
+  var catData = null;
+  var trendData = null;
+
+  function tokens() {
+    var cs = getComputedStyle(document.documentElement);
+    var get = function (n) { return cs.getPropertyValue(n).trim(); };
+    return {
+      palette: [1, 2, 3, 4, 5, 6].map(function (i) { return get("--chart-" + i); }),
+      fg: get("--fg"), muted: get("--muted"), line: get("--line")
+    };
+  }
 
   var catChart = echarts.init(document.getElementById("chart-categories"));
-  catChart.setOption({ title: { text: "Categorías — " + currency, textStyle: { fontSize: 13 } } });
+  var trendChart = echarts.init(document.getElementById("chart-trend"));
+
+  function paint() {
+    var t = tokens();
+    var base = {
+      backgroundColor: "transparent",
+      color: t.palette,
+      textStyle: { color: t.fg }
+    };
+    catChart.setOption(Object.assign({}, base, {
+      title: { text: "Categorías — " + currency, textStyle: { fontSize: 13, color: t.fg } },
+      tooltip: { trigger: "item" },
+      series: [{ type: "pie", radius: "65%", data: catData || [], label: { color: t.fg }, itemStyle: { borderColor: t.line } }]
+    }));
+    trendChart.setOption(Object.assign({}, base, {
+      title: { text: "Evolución del consumo — " + currency, textStyle: { fontSize: 13, color: t.fg } },
+      tooltip: { trigger: "axis" },
+      xAxis: { type: "category", data: (trendData || []).map(function (s) { return s.period; }),
+               axisLine: { lineStyle: { color: t.line } }, axisLabel: { color: t.muted } },
+      yAxis: { type: "value", axisLabel: { color: t.muted }, splitLine: { lineStyle: { color: t.line } } },
+      series: [{ type: "line", data: (trendData || []).map(function (s) { return s.value; }) }]
+    }));
+  }
+  paint();
+
   fetch("/api/dashboard/categories?year=" + year + "&month=" + month + "&currency=" + currency + "&mode=" + mode)
     .then(function (r) { return r.json(); })
-    .then(function (payload) {
-      catChart.setOption({
-        tooltip: { trigger: "item" },
-        series: [{ type: "pie", radius: "65%", data: payload.data }],
-      });
-    });
+    .then(function (payload) { catData = payload.data; paint(); });
 
-  var trendChart = echarts.init(document.getElementById("chart-trend"));
-  trendChart.setOption({ title: { text: "Evolución del consumo — " + currency, textStyle: { fontSize: 13 } } });
   fetch("/api/dashboard/trend?currency=" + currency + "&months=12&mode=" + mode)
     .then(function (r) { return r.json(); })
-    .then(function (payload) {
-      trendChart.setOption({
-        tooltip: { trigger: "axis" },
-        xAxis: { type: "category", data: payload.series.map(function (s) { return s.period; }) },
-        yAxis: { type: "value" },
-        series: [{ type: "line", data: payload.series.map(function (s) { return s.value; }) }],
-      });
-    });
+    .then(function (payload) { trendData = payload.series; paint(); });
 
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paint);
   window.addEventListener("resize", function () {
     catChart.resize();
     trendChart.resize();
